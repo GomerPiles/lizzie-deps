@@ -74,9 +74,9 @@ jobs:
           - target: aarch64-linux-gnu
             runner: ubuntu-24.04-arm
             generator: Ninja
+          # No generator: CMake picks the image's newest Visual Studio.
           - target: x86_64-windows
             runner: windows-2025
-            generator: Visual Studio 17 2022
     name: build (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
@@ -86,7 +86,7 @@ jobs:
       attestations: write
       artifact-metadata: write
     env:
-      CMAKE_GENERATOR: ${{ matrix.generator }}
+      GENERATOR: ${{ matrix.generator }}
       REVISION: ${{ needs.prepare.outputs.revision }}
       TAG: ${{ needs.prepare.outputs.tag }}
     defaults:
@@ -118,7 +118,7 @@ jobs:
           git -C d checkout -q FETCH_HEAD
 
       - name: Configure
-        run: cmake -S d -B b -C "r/dawn/${{ matrix.target }}.cmake"
+        run: cmake -S d -B b ${GENERATOR:+-G "$GENERATOR"} -C "r/dawn/${{ matrix.target }}.cmake"
 
       - name: Build
         run: cmake --build b --config Release --parallel
