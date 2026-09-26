@@ -1,0 +1,62 @@
+# lizzie-deps
+
+Prebuilt third-party libraries for [Lizzie](https://github.com/GomerPiles/lizzie),
+built from upstream source by GitHub Actions and published as GitHub Releases.
+Nothing here is stored as an Actions artifact; binaries go straight to a release,
+which does not count against Actions or Packages storage.
+
+Every published archive has a `.sha256` file beside it and a signed build
+provenance attestation that ties it to the workflow run and recipe commit:
+
+```sh
+gh attestation verify dawn-<rev>-<target>.tar.gz --repo GomerPiles/lizzie-deps
+```
+
+Consumers pin the archive URL and SHA-256. Releases are never replaced; a new
+recipe or upstream revision produces a new release.
+
+## Dawn
+
+| File | Owns |
+| --- | --- |
+| `dawn/REVISION` | Upstream [google/dawn](https://github.com/google/dawn) commit |
+| `dawn/common.cmake` | Settings shared by every target |
+| `dawn/<target>.cmake` | Backends, library type and platform settings for one target |
+| `dawn/package.cmake` | Install, license collection, `BUILDINFO.txt`, archive and checksum |
+| `.github/workflows/dawn.yml` | Runner per target, build, attestation and release |
+
+| Target | Runner | Output |
+| --- | --- | --- |
+| `aarch64-macos` | `macos-26` | Metal; static `lib/libwebgpu_dawn.a`; macOS 26.0+; system libc++ |
+| `x86_64-linux-gnu` | `ubuntu-24.04` | Vulkan, Wayland WSI; static `lib/libwebgpu_dawn.a`; glibc 2.39, system libstdc++ |
+| `aarch64-linux-gnu` | `ubuntu-24.04-arm` | Same as x86_64 |
+| `x86_64-windows` | `windows-2025` | D3D12, D3D11, Vulkan; `bin/webgpu_dawn.dll` + `lib/webgpu_dawn.lib`; static MSVC runtime; system FXC, no DXC |
+
+Each archive is `dawn-<rev12>-<target>.tar.gz` with a single root directory of
+the same name containing `include/`, `lib/`, `bin/` (Windows), Dawn's `LICENSE`,
+`notices/` for compiled-in dependencies, and `BUILDINFO.txt` with the exact
+revisions, compiler and effective CMake settings.
+
+### Changing the build
+
+- **Bump Dawn:** edit `dawn/REVISION`.
+- **Change settings:** edit `dawn/common.cmake` or a target file.
+- **Add a target:** add `dawn/<target>.cmake` and a matrix entry in
+  `dawn.yml`. If its library layout differs, extend the check in `package.cmake`.
+
+Pull requests that touch `dawn/` build every target without publishing. After
+merging, run the **dawn** workflow on `main` (Actions → dawn → Run workflow).
+It publishes release `dawn-<rev12>-<recipe7>`, then copy each archive's URL,
+byte size and SHA-256 from the release notes into Lizzie's pins.
+
+### Building locally
+
+Requires CMake 3.22+, Ninja (or Visual Studio on Windows), Python 3 and Git.
+
+```sh
+git init -q d && git -C d fetch --depth 1 https://github.com/google/dawn.git $(cat dawn/REVISION)
+git -C d checkout -q FETCH_HEAD
+cmake -S d -B b -G Ninja -C dawn/aarch64-macos.cmake
+cmake --build b --config Release
+cmake -D SOURCE_DIR=d -D BINARY_DIR=b -D TARGET=aarch64-macos -D RECIPE_COMMIT=local -D OUTPUT_DIR=o -P dawn/package.cmake
+```

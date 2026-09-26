@@ -1,0 +1,174 @@
+name: dawn
+
+# Pull requests build every target without publishing anything. A manual run on
+# main builds every target and publishes one immutable release for this recipe
+# commit. No Actions artifacts are stored: binaries go straight to the release.
+on:
+  pull_request:
+    paths:
+      - dawn/**
+      - .github/workflows/dawn.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dawn-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PUBLISH: ${{ github.event_name == 'workflow_dispatch' }}
+  GH_REPO: ${{ github.repository }}
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      revision: ${{ steps.pin.outputs.revision }}
+      tag: ${{ steps.pin.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - id: pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=$(head -n 1 dawn/REVISION)
+          [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || { echo "dawn/REVISION must be a full commit hash"; exit 1; }
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+          echo "tag=dawn-${revision:0:12}-${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+      - name: Create draft release
+        if: env.PUBLISH == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.pin.outputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]] || { echo "Publish only from main."; exit 1; }
+          if draft=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null); then
+            [[ "$draft" == true ]] || { echo "$TAG is already published."; exit 1; }
+          else
+            gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "$TAG" \
+              --notes "Build in progress."
+          fi
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-macos
+            runner: macos-26
+            generator: Ninja
+          - target: x86_64-linux-gnu
+            runner: ubuntu-24.04
+            generator: Ninja
+          - target: aarch64-linux-gnu
+            runner: ubuntu-24.04-arm
+            generator: Ninja
+          - target: x86_64-windows
+            runner: windows-2025
+            generator: Visual Studio 17 2022
+    name: build (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    env:
+      CMAKE_GENERATOR: ${{ matrix.generator }}
+      REVISION: ${{ needs.prepare.outputs.revision }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # Short directory names keep Windows builds under MAX_PATH.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: r
+          persist-credentials: false
+
+      - name: Install Ninja (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build
+
+      - name: Install Ninja (macOS)
+        if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: command -v ninja || brew install ninja
+
+      - name: Fetch Dawn
+        run: |
+          set -euo pipefail
+          git config --global core.longpaths true
+          git init -q d
+          git -C d fetch -q --depth 1 https://github.com/google/dawn.git "$REVISION"
+          git -C d checkout -q FETCH_HEAD
+
+      - name: Configure
+        run: cmake -S d -B b -C "r/dawn/${{ matrix.target }}.cmake"
+
+      - name: Build
+        run: cmake --build b --config Release --parallel
+
+      - name: Package
+        run: >
+          cmake -D SOURCE_DIR=d -D BINARY_DIR=b -D TARGET=${{ matrix.target }}
+          -D RECIPE_COMMIT=${{ github.sha }} -D OUTPUT_DIR=o -P r/dawn/package.cmake
+
+      - name: Attest
+        if: env.PUBLISH == 'true'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: o/*.tar.gz
+
+      - name: Upload to draft release
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" o/*.tar.gz o/*.tar.gz.sha256 --clobber
+
+  publish:
+    needs: [prepare, build]
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REVISION: ${{ needs.prepare.outputs.revision }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - name: Write notes and publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --pattern '*.sha256' --dir sums
+          {
+            echo "Dawn [\`$REVISION\`](https://github.com/google/dawn/tree/$REVISION)"
+            echo "built by recipe [\`$GITHUB_SHA\`](https://github.com/$GH_REPO/tree/$GITHUB_SHA)"
+            echo "in [run $GITHUB_RUN_ID](https://github.com/$GH_REPO/actions/runs/$GITHUB_RUN_ID)."
+            echo
+            echo "| Archive | Bytes | SHA-256 |"
+            echo "| --- | --- | --- |"
+            gh release view "$TAG" --json assets \
+              --jq '.assets[] | select(.name | endswith(".tar.gz")) | "\(.name) \(.size)"' |
+              sort | while read -r name size; do
+                echo "| \`$name\` | $size | \`$(cut -d' ' -f1 "sums/$name.sha256")\` |"
+              done
+            echo
+            echo "Verify provenance with \`gh attestation verify <archive> --repo $GH_REPO\`."
+          } > notes.md
+          gh release edit "$TAG" --draft=false --notes-file notes.md

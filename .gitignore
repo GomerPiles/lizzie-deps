@@ -1,0 +1,4 @@
+# Local builds follow the CI layout: r (recipe), d (Dawn source), b (build), o (output).
+/d/
+/b/
+/o/
