@@ -40,7 +40,7 @@ execute_process(
 load_cache("${BINARY_DIR}" READ_WITH_PREFIX cache_
     DAWN_BUILD_MONOLITHIC_LIBRARY LIZZIE_NOTICE_DIRS)
 if(cache_DAWN_BUILD_MONOLITHIC_LIBRARY STREQUAL "SHARED")
-    if(TARGET MATCHES "windows")
+    if("${TARGET}" MATCHES "windows")
         set(required include/dawn/webgpu.h lib/webgpu_dawn.lib bin/webgpu_dawn.dll)
     else()
         message(FATAL_ERROR "No shared-library layout is defined for ${TARGET}")
