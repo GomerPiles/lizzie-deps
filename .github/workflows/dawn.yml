@@ -124,6 +124,8 @@ jobs:
         run: |
           set -euo pipefail
           git config --global core.longpaths true
+          # Keep upstream LF endings so every target ships byte-identical headers.
+          git config --global core.autocrlf false
           git init -q d
           git -C d fetch -q --depth 1 https://github.com/google/dawn.git "$REVISION"
           git -C d checkout -q FETCH_HEAD
