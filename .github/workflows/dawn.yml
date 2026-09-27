@@ -1,10 +1,16 @@
 name: dawn
 
-# Pull requests build every target without publishing anything. A manual run on
-# main builds every target and publishes one immutable release for this recipe
-# commit. No Actions artifacts are stored: binaries go straight to the release.
+# Pull requests build every target without publishing anything. A push to main
+# that changes the recipe, or a manual run on main, builds every target and
+# publishes one immutable release for that recipe commit. No Actions artifacts
+# are stored: binaries go straight to the release.
 on:
   pull_request:
+    paths:
+      - dawn/**
+      - .github/workflows/dawn.yml
+  push:
+    branches: [main]
     paths:
       - dawn/**
       - .github/workflows/dawn.yml
@@ -18,7 +24,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  PUBLISH: ${{ github.event_name == 'workflow_dispatch' }}
+  PUBLISH: ${{ github.event_name != 'pull_request' }}
   GH_REPO: ${{ github.repository }}
 
 jobs:
@@ -155,7 +161,7 @@ jobs:
 
   publish:
     needs: [prepare, build]
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     permissions:
       contents: write

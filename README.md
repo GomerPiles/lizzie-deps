@@ -52,10 +52,11 @@ Lizzie's `zig-toolchain.lock` and rebuild Dawn when that pin changes.
 - **Add a target:** add `dawn/<target>.cmake` and a matrix entry in
   `dawn.yml`. If its library layout differs, extend the check in `package.cmake`.
 
-Pull requests that touch `dawn/` build every target without publishing. After
-merging, run the **dawn** workflow on `main` (Actions → dawn → Run workflow).
-It publishes release `dawn-<rev12>-<recipe7>`, then copy each archive's URL,
-byte size and SHA-256 from the release notes into Lizzie's pins.
+Pull requests that touch `dawn/` or `dawn.yml` build every target without
+publishing. Merging such a pull request builds again on `main` and publishes
+release `dawn-<rev12>-<recipe7>`; then copy each archive's URL, byte size and
+SHA-256 from the release notes into Lizzie's pins. To retry a failed publish,
+run the **dawn** workflow on `main` manually (Actions → dawn → Run workflow).
 
 ### Building locally
 
