@@ -103,6 +103,17 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build
 
+      # The Linux cache files compile with the pinned `zig cc`; the wrappers read $ZIG.
+      - name: Install Zig (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          read -r _ sha url < <(grep "^$(uname -m)-linux " r/dawn/zig/TOOLCHAIN)
+          curl -fsSL --retry 3 -o zig.tar.xz "$url"
+          echo "$sha  zig.tar.xz" | sha256sum -c -
+          mkdir zig && tar -xJf zig.tar.xz -C zig --strip-components 1
+          echo "ZIG=$PWD/zig/zig" >> "$GITHUB_ENV"
+
       - name: Install Ninja (macOS)
         if: runner.os == 'macOS'
         env:
