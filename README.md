@@ -34,3 +34,19 @@ aarch64, and Apple M1 on macOS.
 Linux uses the pinned Zig and its libc++; macOS uses the system libc++ and requires
 macOS 26+. Change the revision or recipe, validate the pull request, then merge
 to publish new archives. Existing release assets are never replaced.
+
+## CI image
+
+`ci-image/Containerfile` defines the Linux image Lizzie's CI suites and local
+container checks run in: Ubuntu 24.04 from a pinned snapshot with Weston 13 and
+Mesa lavapipe, Node, and Playwright's headless Chromium with its system libraries.
+Node and Playwright match Lizzie's `web/.node-version` and `web/package-lock.json`;
+change them together. Zig, Dawn and Wasmtime are not included: Lizzie pins and
+caches those itself.
+
+The `ci-image` workflow builds amd64 and arm64 natively and publishes
+`ghcr.io/gomerpiles/lizzie-ci:<recipe commit>` with a provenance attestation
+(`gh attestation verify oci://ghcr.io/gomerpiles/lizzie-ci@<digest> --repo
+GomerPiles/lizzie-deps`). Consumers pin the digest from the run summary. The
+package must stay public so pulls need no credentials. Existing tags are never
+replaced.
