@@ -1,7 +1,7 @@
 # Windows x64: compile D3D12, D3D11 and Vulkan into a static archive that
 # dawn/windows links into webgpu_dawn.dll, using the static MSVC runtime. D3D12
-# compiles shaders with the built DXC (dxcompiler.dll plus the Windows SDK's
-# dxil.dll) on Shader Model 6+ hardware and FXC otherwise; D3D11 uses FXC.
+# compiles shaders with the built DXC (dxcompiler.dll, which signs DXIL itself)
+# on Shader Model 6+ hardware and FXC otherwise; D3D11 uses FXC.
 include("${CMAKE_CURRENT_LIST_DIR}/common.cmake")
 
 set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded CACHE STRING "")

@@ -32,7 +32,7 @@ target_link_options(webgpu_dawn_shared PRIVATE /PDBALTPATH:webgpu_dawn.pdb)
 target_link_options(dxcompiler PRIVATE /PDBALTPATH:dxcompiler.pdb)
 
 # The archive's install rule is upstream's; package.cmake keeps only the DLL,
-# its import library and the DXC libraries Dawn loads at runtime.
+# its import library and the DXC library Dawn loads at runtime.
 install(TARGETS webgpu_dawn_shared
     RUNTIME DESTINATION bin
     ARCHIVE DESTINATION lib)
@@ -40,8 +40,6 @@ install(FILES
         "$<TARGET_FILE:dxcompiler>"
         "$<TARGET_PDB_FILE:webgpu_dawn_shared>"
         "$<TARGET_PDB_FILE:dxcompiler>"
-        # Copied from the Windows SDK by upstream's copy_dxil_dll target.
-        "${CMAKE_BINARY_DIR}/$<CONFIG>/dxil.dll"
     DESTINATION bin)
 
 # Link and load the DLL from a public, dependency-free C fixture.

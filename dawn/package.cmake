@@ -52,7 +52,7 @@ if("${TARGET}" MATCHES "windows")
     file(REMOVE_RECURSE "${stage}/lib/cmake")
     file(RENAME "${stage}/lib/webgpu_dawn_dll.lib" "${stage}/lib/webgpu_dawn.lib")
     set(required include/dawn/webgpu.h lib/webgpu_dawn.lib bin/webgpu_dawn.dll
-        bin/dxcompiler.dll bin/dxil.dll)
+        bin/dxcompiler.dll)
     set(symbols bin/webgpu_dawn.pdb bin/dxcompiler.pdb)
 else()
     set(required include/dawn/webgpu.h lib/libwebgpu_dawn.a)
