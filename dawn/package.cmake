@@ -1,5 +1,5 @@
 # Packages an installed Dawn build as <OUTPUT_DIR>/dawn-<rev12>-<TARGET>.tar.gz
-# plus a matching .sha256 file. A build that produces a PDB also gets a
+# plus a matching .sha256 file. A build that produces PDBs also gets a
 # separate dawn-<rev12>-<TARGET>-symbols.tar.gz. Run in script mode:
 #
 #   cmake -D SOURCE_DIR=... -D BINARY_DIR=... -D TARGET=... -D RECIPE_COMMIT=...
@@ -7,7 +7,7 @@
 #
 # The archive has one root directory named like the archive, containing
 # include/, lib/ (and bin/ on Windows), LICENSE, notices/ and BUILDINFO.txt.
-# The symbols archive holds the PDB, LICENSE and the same BUILDINFO.txt.
+# The symbols archive holds the PDBs, LICENSE and the same BUILDINFO.txt.
 cmake_minimum_required(VERSION 3.22)
 
 foreach(var SOURCE_DIR BINARY_DIR TARGET RECIPE_COMMIT OUTPUT_DIR)
@@ -43,24 +43,17 @@ execute_process(
     COMMAND "${CMAKE_COMMAND}" --install "${BINARY_DIR}" --config Release --prefix "${stage}"
     COMMAND_ERROR_IS_FATAL ANY)
 
-load_cache("${BINARY_DIR}" READ_WITH_PREFIX cache_
-    DAWN_BUILD_MONOLITHIC_LIBRARY DAWN_USE_BUILT_DXC LIZZIE_NOTICE_DIRS)
+load_cache("${BINARY_DIR}" READ_WITH_PREFIX cache_ LIZZIE_NOTICE_DIRS)
 if("${TARGET}" MATCHES "windows")
-    set(required include/dawn/webgpu.h lib/webgpu_dawn.lib
-        lib/webgpu_dawn_dll.lib bin/webgpu_dawn.dll)
-    set(symbols bin/webgpu_dawn.pdb)
-    if(cache_DAWN_USE_BUILT_DXC)
-        set(dxil_build_path "${BINARY_DIR}/Release/dxil.dll")
-        if(NOT EXISTS "${dxil_build_path}")
-            set(dxil_build_path "${BINARY_DIR}/dxil.dll")
-        endif()
-        if(NOT EXISTS "${dxil_build_path}")
-            message(FATAL_ERROR "Built DXC is missing the copied Windows SDK dxil.dll")
-        endif()
-        file(COPY_FILE "${dxil_build_path}" "${stage}/bin/dxil.dll" ONLY_IF_DIFFERENT)
-        file(REMOVE "${stage}/bin/dxc.exe")
-        list(APPEND required bin/dxcompiler.dll bin/dxil.dll)
-    endif()
+    # Windows ships only the DLL. Upstream installs the static archive it was
+    # linked from, plus a CMake export describing that archive; drop both and
+    # give the import library the conventional name.
+    file(REMOVE "${stage}/lib/webgpu_dawn.lib")
+    file(REMOVE_RECURSE "${stage}/lib/cmake")
+    file(RENAME "${stage}/lib/webgpu_dawn_dll.lib" "${stage}/lib/webgpu_dawn.lib")
+    set(required include/dawn/webgpu.h lib/webgpu_dawn.lib bin/webgpu_dawn.dll
+        bin/dxcompiler.dll bin/dxil.dll)
+    set(symbols bin/webgpu_dawn.pdb bin/dxcompiler.pdb)
 else()
     set(required include/dawn/webgpu.h lib/libwebgpu_dawn.a)
 endif()
@@ -70,13 +63,15 @@ foreach(path IN LISTS required symbols)
     endif()
 endforeach()
 
-# Debuggers find the PDB by the bare file name recorded in the DLL.
-if(symbols)
-    file(STRINGS "${stage}/bin/webgpu_dawn.dll" pdb_names REGEX "\\.pdb")
-    if(NOT "webgpu_dawn.pdb" IN_LIST pdb_names)
-        message(FATAL_ERROR "webgpu_dawn.dll does not name webgpu_dawn.pdb: ${pdb_names}")
+# Debuggers find each PDB by the bare file name recorded in its DLL.
+foreach(pdb IN LISTS symbols)
+    string(REGEX REPLACE "\\.pdb$" ".dll" dll "${pdb}")
+    cmake_path(GET pdb FILENAME pdb_name)
+    file(STRINGS "${stage}/${dll}" pdb_names REGEX "\\.pdb")
+    if(NOT "${pdb_name}" IN_LIST pdb_names)
+        message(FATAL_ERROR "${dll} does not name ${pdb_name}: ${pdb_names}")
     endif()
-endif()
+endforeach()
 
 # Dawn's own license, then the license files of each compiled-in dependency.
 file(COPY "${SOURCE_DIR}/LICENSE" DESTINATION "${stage}")
@@ -84,7 +79,8 @@ foreach(dir IN LISTS cache_LIZZIE_NOTICE_DIRS)
     file(GLOB notices LIST_DIRECTORIES false
         "${SOURCE_DIR}/third_party/${dir}/LICENSE*"
         "${SOURCE_DIR}/third_party/${dir}/COPYING*"
-        "${SOURCE_DIR}/third_party/${dir}/NOTICE*")
+        "${SOURCE_DIR}/third_party/${dir}/NOTICE*"
+        "${SOURCE_DIR}/third_party/${dir}/ThirdPartyNotices*")
     if(NOT notices)
         message(FATAL_ERROR "No license file found in third_party/${dir}")
     endif()
@@ -132,29 +128,7 @@ function(write_archive archive_name)
     message(STATUS "${archive_name}.tar.gz ${size} bytes sha256 ${digest}")
 endfunction()
 
-if("${TARGET}" MATCHES "windows")
-    # Each package is independently usable, with its own headers and notices.
-    set(static_name "${name}-static")
-    set(shared_name "${name}-shared")
-    set(static_stage "${OUTPUT_DIR}/${static_name}")
-    set(shared_stage "${OUTPUT_DIR}/${shared_name}")
-    file(REMOVE_RECURSE "${static_stage}" "${shared_stage}")
-    file(COPY "${stage}/" DESTINATION "${shared_stage}")
-    file(REMOVE "${shared_stage}/lib/webgpu_dawn.lib")
-    # Upstream's CMake export describes the static target, not this DLL wrapper.
-    file(REMOVE_RECURSE "${shared_stage}/lib/cmake")
-    if(cache_DAWN_USE_BUILT_DXC)
-        file(REMOVE "${stage}/bin/webgpu_dawn.dll")
-    else()
-        file(REMOVE_RECURSE "${stage}/bin")
-    endif()
-    file(REMOVE "${stage}/lib/webgpu_dawn_dll.lib")
-    file(RENAME "${stage}" "${static_stage}")
-    write_archive("${static_name}")
-    write_archive("${shared_name}")
-else()
-    write_archive("${name}")
-endif()
+write_archive("${name}")
 if(symbols)
     write_archive("${symbols_name}")
 endif()
