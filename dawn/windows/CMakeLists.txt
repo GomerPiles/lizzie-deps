@@ -8,9 +8,9 @@ if(NOT DEFINED DAWN_SOURCE_DIR)
 endif()
 add_subdirectory("${DAWN_SOURCE_DIR}" upstream)
 
-# Every object bundled into the static archive writes one compiler PDB, which
-# ships beside the archive in its own symbols package. /FS serializes the
-# parallel compilers that share it.
+# Each target bundled into the static archive writes its own compiler PDB,
+# named webgpu_dawn.<target>.pdb. Parallel MSBuild projects cannot share one.
+# The PDBs ship beside the archive in its own symbols package.
 set(static_pdb_dir "${CMAKE_CURRENT_BINARY_DIR}/static_pdb")
 get_target_property(bundled webgpu_dawn SOURCES)
 string(REGEX MATCHALL "\\$<TARGET_OBJECTS:[^>]+>" bundled "${bundled}")
@@ -18,14 +18,14 @@ string(REGEX REPLACE "\\$<TARGET_OBJECTS:([^>]+)>" "\\1" bundled "${bundled}")
 if(NOT bundled)
     message(FATAL_ERROR "webgpu_dawn bundles no object targets")
 endif()
+set(static_pdbs)
 foreach(target IN LISTS bundled)
     set_target_properties(${target} PROPERTIES
-        COMPILE_PDB_NAME webgpu_dawn_static
+        COMPILE_PDB_NAME webgpu_dawn.${target}
         COMPILE_PDB_OUTPUT_DIRECTORY_RELEASE "${static_pdb_dir}")
-    target_compile_options(${target} PRIVATE /FS)
+    list(APPEND static_pdbs "${static_pdb_dir}/webgpu_dawn.${target}.pdb")
 endforeach()
-install(FILES "${static_pdb_dir}/webgpu_dawn_static.pdb"
-    DESTINATION lib CONFIGURATIONS Release)
+install(FILES ${static_pdbs} DESTINATION lib CONFIGURATIONS Release)
 
 # Dawn is compiled once into a static archive. Export only its public C API
 # when linking the DLL; static objects contain no dllexport directives.

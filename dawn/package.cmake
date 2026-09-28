@@ -1,6 +1,6 @@
 # Packages an installed Dawn build as <OUTPUT_DIR>/dawn-<rev12>-<TARGET>.tar.gz
 # plus a matching .sha256 file. Windows instead gets separate -static and
-# -shared packages, each with a -symbols package holding its PDB. Run in
+# -shared packages, each with a -symbols package holding its PDBs. Run in
 # script mode:
 #
 #   cmake -D SOURCE_DIR=... -D BINARY_DIR=... -D TARGET=... -D RECIPE_COMMIT=...
@@ -8,7 +8,7 @@
 #
 # The archive has one root directory named like the archive, containing
 # include/, lib/ (and bin/ for the Windows DLL), LICENSE, notices/ and
-# BUILDINFO.txt. A symbols archive holds a PDB, LICENSE and the same BUILDINFO.txt.
+# BUILDINFO.txt. A symbols archive holds PDBs, LICENSE and the same BUILDINFO.txt.
 cmake_minimum_required(VERSION 3.22)
 
 foreach(var SOURCE_DIR BINARY_DIR TARGET RECIPE_COMMIT OUTPUT_DIR)
@@ -45,7 +45,10 @@ load_cache("${BINARY_DIR}" READ_WITH_PREFIX cache_
 if("${TARGET}" MATCHES "windows")
     set(required include/dawn/webgpu.h lib/webgpu_dawn.lib
         lib/webgpu_dawn_dll.lib bin/webgpu_dawn.dll)
-    set(static_symbols lib/webgpu_dawn_static.pdb)
+    file(GLOB static_symbols RELATIVE "${stage}" "${stage}/lib/webgpu_dawn.*.pdb")
+    if(NOT static_symbols)
+        message(FATAL_ERROR "Installed Dawn has no static library PDBs")
+    endif()
     set(shared_symbols bin/webgpu_dawn.pdb)
 else()
     set(required include/dawn/webgpu.h lib/libwebgpu_dawn.a)
@@ -57,7 +60,7 @@ foreach(path IN LISTS required static_symbols shared_symbols)
 endforeach()
 
 # Debuggers find the PDB by the bare file name recorded in the DLL. Linkers
-# find the static PDB by the file name recorded in its objects, looking beside
+# find the static PDBs by the file names recorded in its objects, looking beside
 # the archive when the build directory's path does not exist.
 if(shared_symbols)
     file(STRINGS "${stage}/bin/webgpu_dawn.dll" pdb_names REGEX "\\.pdb")
@@ -67,9 +70,9 @@ if(shared_symbols)
 endif()
 if(static_symbols)
     file(STRINGS "${stage}/lib/webgpu_dawn.lib" pdb_names
-        REGEX "webgpu_dawn_static\\.pdb" LIMIT_COUNT 1)
+        REGEX "webgpu_dawn\\.[^\\\\/]+\\.pdb" LIMIT_COUNT 1)
     if(NOT pdb_names)
-        message(FATAL_ERROR "webgpu_dawn.lib objects do not name webgpu_dawn_static.pdb")
+        message(FATAL_ERROR "webgpu_dawn.lib objects do not name webgpu_dawn.*.pdb")
     endif()
 endif()
 
@@ -118,12 +121,14 @@ function(write_archive archive_name)
 endfunction()
 
 # Symbols download separately; each package keeps only what links or runs.
-function(write_symbols_archive package_name path)
+function(write_symbols_archive package_name)
     set(package_stage "${OUTPUT_DIR}/${package_name}")
     set(symbols_stage "${package_stage}-symbols")
-    cmake_path(GET path FILENAME file_name)
     file(MAKE_DIRECTORY "${symbols_stage}")
-    file(RENAME "${package_stage}/${path}" "${symbols_stage}/${file_name}")
+    foreach(path IN LISTS ARGN)
+        cmake_path(GET path FILENAME file_name)
+        file(RENAME "${package_stage}/${path}" "${symbols_stage}/${file_name}")
+    endforeach()
     file(COPY "${package_stage}/LICENSE" "${package_stage}/BUILDINFO.txt"
         DESTINATION "${symbols_stage}")
     write_archive("${package_name}-symbols")
@@ -136,14 +141,15 @@ if("${TARGET}" MATCHES "windows")
     set(static_stage "${OUTPUT_DIR}/${static_name}")
     set(shared_stage "${OUTPUT_DIR}/${shared_name}")
     file(COPY "${stage}/" DESTINATION "${shared_stage}")
-    file(REMOVE "${shared_stage}/lib/webgpu_dawn.lib" "${shared_stage}/${static_symbols}")
+    list(TRANSFORM static_symbols PREPEND "${shared_stage}/" OUTPUT_VARIABLE shared_extra)
+    file(REMOVE "${shared_stage}/lib/webgpu_dawn.lib" ${shared_extra})
     # Upstream's CMake export describes the static target, not this DLL wrapper.
     file(REMOVE_RECURSE "${shared_stage}/lib/cmake")
     file(REMOVE_RECURSE "${stage}/bin")
     file(REMOVE "${stage}/lib/webgpu_dawn_dll.lib")
     file(RENAME "${stage}" "${static_stage}")
-    write_symbols_archive("${static_name}" "${static_symbols}")
-    write_symbols_archive("${shared_name}" "${shared_symbols}")
+    write_symbols_archive("${static_name}" ${static_symbols})
+    write_symbols_archive("${shared_name}" ${shared_symbols})
     write_archive("${static_name}")
     write_archive("${shared_name}")
 else()

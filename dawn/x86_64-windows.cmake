@@ -8,7 +8,7 @@ set(ABSL_MSVC_STATIC_RUNTIME ON CACHE BOOL "")
 
 # Optimized code with separate PDBs for the static library and the DLL, each
 # published as its own symbols archive. /Zi keeps debug info out of the objects;
-# dawn/windows gathers every archived object's debug info into one compiler PDB.
+# dawn/windows names a compiler PDB for each target in the static archive.
 # /DEBUG turns off /OPT:REF and /OPT:ICF, so they are restored, and
 # /PDBALTPATH records only the DLL PDB's file name instead of the runner's path.
 # The name is literal because MSBuild mangles the linker's %_PDB% to

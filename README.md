@@ -25,8 +25,8 @@ aarch64, and Windows x86_64. Archives include matching headers and licenses.
 Windows provides separate static and shared packages from one compilation. The
 static package contains `webgpu_dawn.lib`; the shared package contains
 `webgpu_dawn.dll` and its import library, `webgpu_dawn_dll.lib`. Each package's
-PDB ships in a matching `-symbols` archive; extract `webgpu_dawn_static.pdb` next
-to `webgpu_dawn.lib` so linkers find it. Both use the static MSVC runtime;
+PDBs ship in a matching `-symbols` archive; extract the static library's
+`webgpu_dawn.*.pdb` files next to `webgpu_dawn.lib` so linkers find them. Both use the static MSVC runtime;
 static consumers need compatible MSVC C++ runtime and Windows SDK libraries.
 
 Linux uses the pinned Zig and its libc++; macOS uses the system libc++ and requires
