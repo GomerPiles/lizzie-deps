@@ -1,0 +1,116 @@
+name: zig
+
+# Mirrors the Zig archives pinned in zig/TOOLCHAIN to release zig-<version>, so
+# CI downloads them from GitHub instead of ziglang.org. The files are upstream's,
+# byte for byte, with upstream's minisign signatures beside them. Pull requests
+# verify everything without publishing. A push to main that changes the pin, or
+# a manual run on main, publishes the release; published archives are never
+# replaced, only added to when a host is added for the same version.
+on:
+  pull_request:
+    paths:
+      - zig/**
+      - .github/workflows/zig.yml
+  push:
+    branches: [main]
+    paths:
+      - zig/**
+      - .github/workflows/zig.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zig-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PUBLISH: ${{ github.event_name != 'pull_request' }}
+  GH_REPO: ${{ github.repository }}
+  # Zig Software Foundation release key, from https://ziglang.org/download/
+  ZIG_KEY: RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U
+
+jobs:
+  mirror:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install minisign
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends minisign
+
+      - name: Download and verify
+        run: |
+          set -euo pipefail
+          version=$(awk '$1 == "version" { print $2 }' zig/TOOLCHAIN)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "zig/TOOLCHAIN needs a release version"; exit 1; }
+          prefix="https://github.com/$GH_REPO/releases/download/zig-$version/"
+          while read -r host sha url; do
+            [[ "$sha" =~ ^[0-9a-f]{64}$ ]] || { echo "$host: bad SHA-256"; exit 1; }
+            [[ "$url" == "$prefix"* ]] || { echo "$host: URL must start with $prefix"; exit 1; }
+            name=${url##*/}
+            zig/fetch "$host" o
+            # The trusted comment names the signed file, which stops a signature
+            # for one archive (or an older version) vouching for another.
+            comment=$(minisign -V -P "$ZIG_KEY" -m "o/$name" -Q)
+            [[ "$comment" == *$'\t'"file:$name"$'\t'* ]] || { echo "$name: signature is for another file: $comment"; exit 1; }
+            echo "$sha  $name" > "o/$name.sha256"
+          done < <(grep -Ev '^(#|version |$)' zig/TOOLCHAIN)
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "TAG=zig-$version" >> "$GITHUB_ENV"
+          ls -l o
+
+      - name: Publish
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]] || { echo "Publish only from main."; exit 1; }
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            gh release create "$TAG" --draft --latest=false --target "$GITHUB_SHA" \
+              --title "Zig $VERSION" --notes "Upload in progress."
+          fi
+
+          # Upload what is missing; anything already there must be identical.
+          gh release view "$TAG" --json assets --jq '.assets[].name' > existing
+          missing=()
+          for file in o/*; do
+            name=${file#o/}
+            if grep -qxF "$name" existing; then
+              gh release download "$TAG" --pattern "$name" --output published
+              cmp "$file" published || { echo "$TAG has a different $name; releases are never replaced."; exit 1; }
+              rm published
+            else
+              missing+=("$file")
+            fi
+          done
+          if (( ${#missing[@]} )); then
+            gh release upload "$TAG" "${missing[@]}"
+          fi
+
+          {
+            echo "[Zig $VERSION](https://ziglang.org/download/#release-$VERSION), mirrored unmodified"
+            echo "by recipe [\`$GITHUB_SHA\`](https://github.com/$GH_REPO/tree/$GITHUB_SHA)"
+            echo "in [run $GITHUB_RUN_ID](https://github.com/$GH_REPO/actions/runs/$GITHUB_RUN_ID)."
+            echo
+            echo "| Archive | Bytes | SHA-256 |"
+            echo "| --- | --- | --- |"
+            for sum in o/*.sha256; do
+              name=${sum#o/}
+              name=${name%.sha256}
+              echo "| \`$name\` | $(stat -c %s "o/$name") | \`$(cut -d' ' -f1 "$sum")\` |"
+            done
+            echo
+            echo "Verify with \`minisign -V -P $ZIG_KEY -m <archive>\`."
+          } > notes.md
+          gh release edit "$TAG" --draft=false --latest=false --notes-file notes.md
