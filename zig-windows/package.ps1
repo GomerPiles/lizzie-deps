@@ -36,7 +36,7 @@ function Invoke-Warmup {
     Write-Output "MEASURE mode=$Mode translator_ms=$($clock.ElapsedMilliseconds)"
     $clock.Restart()
     $output = Join-Path $work 'warmup.exe'
-    & $zig build-exe (Join-Path $PSScriptRoot 'warmup.zig') -target x86_64-windows-msvc --win32-manifest (Join-Path $PSScriptRoot 'warmup.manifest') --cache-dir $local "-femit-bin=$output"
+    & $zig build-exe (Join-Path $PSScriptRoot 'warmup.zig') -target x86_64-windows-msvc (Join-Path $PSScriptRoot 'warmup.manifest') --cache-dir $local "-femit-bin=$output"
     if ($LASTEXITCODE -ne 0) { throw 'Manifest build failed' }
     Write-Output "MEASURE mode=$Mode manifest_build_ms=$($clock.ElapsedMilliseconds)"
     & $output
