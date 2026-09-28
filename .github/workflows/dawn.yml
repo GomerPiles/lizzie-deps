@@ -140,14 +140,14 @@ jobs:
         if: runner.os != 'Windows'
         run: cmake -S d -B b ${GENERATOR:+-G "$GENERATOR"} -C "r/dawn/${{ matrix.target }}.cmake"
 
-      - name: Configure Windows static and shared libraries
+      - name: Configure Windows DLL
         if: runner.os == 'Windows'
         run: cmake -S r/dawn/windows -B b -D DAWN_SOURCE_DIR="$PWD/d" -C r/dawn/x86_64-windows.cmake
 
       - name: Build
         run: cmake --build b --config Release --parallel
 
-      - name: Test both Windows link forms
+      - name: Test the Windows DLL
         if: runner.os == 'Windows'
         run: ctest --test-dir b -C Release --output-on-failure
 

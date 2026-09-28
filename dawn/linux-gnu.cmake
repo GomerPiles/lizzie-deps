@@ -2,14 +2,15 @@
 # static library compiled by the pinned `zig c++` against Zig's bundled libc++
 # and a glibc 2.28 baseline, so the build does not depend on the runner's
 # glibc, GCC or libstdc++. Consumers link Zig's libc++ (`linkLibCpp`) from the
-# same Zig version. The arch file sets CMAKE_SYSTEM_PROCESSOR first.
+# same Zig version. The arch file sets CMAKE_SYSTEM_PROCESSOR and the minimum
+# CPU, LIZZIE_ZIG_CPU, first.
 include("${CMAKE_CURRENT_LIST_DIR}/common.cmake")
 
 set(CMAKE_SYSTEM_NAME Linux CACHE STRING "")
 foreach(lang C CXX)
     set(CMAKE_${lang}_COMPILER_TARGET "${CMAKE_SYSTEM_PROCESSOR}-linux-gnu.2.28" CACHE STRING "")
     # Unlike clang and GCC, `zig cc` emits debug info unless told otherwise.
-    set(CMAKE_${lang}_FLAGS "-g0" CACHE STRING "")
+    set(CMAKE_${lang}_FLAGS "-g0 -mcpu=${LIZZIE_ZIG_CPU}" CACHE STRING "")
 endforeach()
 set(CMAKE_C_COMPILER "${CMAKE_CURRENT_LIST_DIR}/zig/cc" CACHE FILEPATH "")
 set(CMAKE_CXX_COMPILER "${CMAKE_CURRENT_LIST_DIR}/zig/c++" CACHE FILEPATH "")

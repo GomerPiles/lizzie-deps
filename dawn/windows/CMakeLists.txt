@@ -8,8 +8,8 @@ if(NOT DEFINED DAWN_SOURCE_DIR)
 endif()
 add_subdirectory("${DAWN_SOURCE_DIR}" upstream)
 
-# Dawn is compiled once into a static archive. Export only its public C API
-# when linking the DLL; static objects contain no dllexport directives.
+# Dawn is compiled into a static archive. Export only its public C API when
+# linking the DLL; static objects contain no dllexport directives.
 set(exports "${CMAKE_CURRENT_BINARY_DIR}/webgpu_dawn.def")
 set(header "${CMAKE_CURRENT_BINARY_DIR}/upstream/gen/include/dawn/webgpu.h")
 add_custom_command(OUTPUT "${exports}"
@@ -24,24 +24,30 @@ set_target_properties(webgpu_dawn_shared PROPERTIES
     ARCHIVE_OUTPUT_NAME webgpu_dawn_dll)
 target_link_libraries(webgpu_dawn_shared PRIVATE
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,webgpu_dawn>")
+
+# /PDBALTPATH records only each PDB's file name instead of the runner's path.
+# The names are literal because MSBuild mangles the linker's %_PDB% to
+# %webgpu_dawn.pdb%; package.cmake checks the recorded names.
+target_link_options(webgpu_dawn_shared PRIVATE /PDBALTPATH:webgpu_dawn.pdb)
+target_link_options(dxcompiler PRIVATE /PDBALTPATH:dxcompiler.pdb)
+
+# The archive's install rule is upstream's; package.cmake keeps only the DLL,
+# its import library and the DXC library Dawn loads at runtime.
 install(TARGETS webgpu_dawn_shared
     RUNTIME DESTINATION bin
     ARCHIVE DESTINATION lib)
-install(FILES "$<TARGET_PDB_FILE:webgpu_dawn_shared>" DESTINATION bin)
+install(FILES
+        "$<TARGET_FILE:dxcompiler>"
+        "$<TARGET_PDB_FILE:webgpu_dawn_shared>"
+        "$<TARGET_PDB_FILE:dxcompiler>"
+    DESTINATION bin)
 
-# Test both link forms through the same public, dependency-free C fixture.
+# Link and load the DLL from a public, dependency-free C fixture.
 enable_testing()
-foreach(kind static shared)
-    add_executable(smoke_${kind} smoke.c)
-    target_include_directories(smoke_${kind} PRIVATE
-        "${CMAKE_CURRENT_BINARY_DIR}/upstream/gen/include")
-    if(kind STREQUAL "static")
-        target_link_libraries(smoke_${kind} PRIVATE webgpu_dawn)
-    else()
-        target_compile_definitions(smoke_${kind} PRIVATE WGPU_SHARED_LIBRARY)
-        target_link_libraries(smoke_${kind} PRIVATE webgpu_dawn_shared)
-        add_dependencies(smoke_${kind} webgpu_dawn_shared)
-    endif()
-    set_target_properties(smoke_${kind} PROPERTIES LINKER_LANGUAGE CXX)
-    add_test(NAME smoke_${kind} COMMAND smoke_${kind})
-endforeach()
+add_executable(smoke smoke.c)
+target_include_directories(smoke PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/upstream/gen/include")
+target_compile_definitions(smoke PRIVATE WGPU_SHARED_LIBRARY)
+target_link_libraries(smoke PRIVATE webgpu_dawn_shared)
+add_dependencies(smoke webgpu_dawn_shared)
+set_target_properties(smoke PROPERTIES LINKER_LANGUAGE CXX)
+add_test(NAME smoke COMMAND smoke)

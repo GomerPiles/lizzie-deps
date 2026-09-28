@@ -22,11 +22,14 @@ own checksums and attestations; upstream signatures cover only upstream archives
 The `dawn` workflow builds optimized libraries for Linux x86_64/aarch64, macOS
 aarch64, and Windows x86_64. Archives include matching headers and licenses.
 
-Windows provides separate static and shared packages from one compilation. The
-static package contains `webgpu_dawn.lib`; the shared package contains
-`webgpu_dawn.dll` and its import library, `webgpu_dawn_dll.lib`. DLL symbols ship
-separately. Both use the static MSVC runtime; static consumers need compatible
-MSVC C++ runtime and Windows SDK libraries.
+Windows provides `webgpu_dawn.dll` and its import library, `webgpu_dawn.lib`,
+with D3D12, D3D11 and Vulkan. `bin/` also holds DXC's `dxcompiler.dll`; ship it
+beside the executable so D3D12 compiles shaders with DXC on Shader Model 6+
+hardware (Dawn falls back to FXC otherwise). `dxil.dll` is not needed. The DLLs
+use the static MSVC runtime. Their PDBs ship in a separate symbols archive.
+
+Minimum CPUs are x86-64-v3 (AVX2) on Linux and Windows, ARMv8.2-A on Linux
+aarch64, and Apple M1 on macOS.
 
 Linux uses the pinned Zig and its libc++; macOS uses the system libc++ and requires
 macOS 26+. Change the revision or recipe, validate the pull request, then merge
