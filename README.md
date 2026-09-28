@@ -3,8 +3,8 @@
 Prebuilt third-party libraries for [Lizzie](https://github.com/GomerPiles/lizzie),
 built from upstream source by GitHub Actions and published as GitHub Releases,
 plus a mirror of the pinned [Zig](#zig) toolchain.
-Nothing here is stored as an Actions artifact; binaries go straight to a release,
-which does not count against Actions or Packages storage.
+Durable binaries live in releases. The Windows Zig cache bundle uses a one-day
+Actions artifact only to verify it on an independent runner before publication.
 
 Every published archive has a `.sha256` file beside it. Built archives also
 have a signed build provenance attestation that ties it to the workflow run and recipe commit:
@@ -96,3 +96,25 @@ version in the URL. Pull requests verify every archive without publishing;
 merging publishes `zig-<version>` and rebuilds Dawn. Then copy `zig/TOOLCHAIN`'s
 pins into Lizzie's `zig-toolchain.lock`. Adding a host for the same version
 adds its files to the existing release; files already published never change.
+
+### Windows CI cache bundle
+
+`zig-windows/` builds a separate derived ZIP containing the unmodified upstream
+compiler and libraries plus `global-cache/`. An empty cache is warmed using only
+the public `warmup.h`, `warmup.zig`, and `warmup.manifest` fixtures. No application
+repository, dependency, or application cache is checked out or packaged.
+
+Zig 0.16 compiles its C translator and Windows resource compiler on first use.
+The bundle avoids that cost on matching `avrea-windows-2025-4-vcpu` machines.
+These helper cache entries depend on the host target/CPU; other machines can
+miss and compile normally. Point `ZIG_GLOBAL_CACHE_DIR` at the extracted
+`global-cache` directory. It is writable; compiler and library files stay unchanged.
+
+`.github/workflows/zig-windows.yml` packages on one Windows runner and verifies
+on a fresh matching runner at a different path. Verification checks that neither
+helper is rebuilt, as well as running the tiny executable. Main publishes only
+after this passes, to immutable `zig-windows-<version>-<recipe7>` releases with
+a SHA-256 file and build provenance attestation. `CACHE-SEED.json` records the
+upstream checksum, recipe and CPU. Upstream mirror signatures do not cover this
+derived archive. Consumers pin its own URL and checksum; `zig/TOOLCHAIN` continues
+to describe the unmodified upstream mirrors.

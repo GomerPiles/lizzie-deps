@@ -1,0 +1,113 @@
+name: zig-windows
+
+# A separate derived bundle; upstream mirrors and their signatures stay unchanged.
+on:
+  pull_request:
+    paths: [zig-windows/**, zig/TOOLCHAIN, .github/workflows/zig-windows.yml]
+  push:
+    branches: [main]
+    paths: [zig-windows/**, zig/TOOLCHAIN, .github/workflows/zig-windows.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zig-windows-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  package:
+    runs-on: avrea-windows-2025-4-vcpu
+    timeout-minutes: 15
+    outputs:
+      artifact: ${{ steps.upload.outputs.artifact-id }}
+      name: ${{ steps.package.outputs.name }}
+      sha256: ${{ steps.package.outputs.sha256 }}
+      version: ${{ steps.package.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: package
+        shell: powershell
+        run: ./zig-windows/package.ps1 -Mode package
+      # Only a short-lived handoff to an independent consumer; releases are durable.
+      - id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: zig-windows-ci
+          path: o/*
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+  verify:
+    needs: package
+    # Match the intended CI consumers, on a fresh machine and extraction path.
+    runs-on: avrea-windows-2025-4-vcpu
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs.package.outputs.artifact }}
+          path: o
+          merge-multiple: true
+      - name: Verify relocated helper cache
+        shell: powershell
+        env:
+          BUNDLE_NAME: ${{ needs.package.outputs.name }}
+        run: ./zig-windows/package.ps1 -Mode verify -Archive "o/$env:BUNDLE_NAME"
+
+  publish:
+    needs: [package, verify]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs.package.outputs.artifact }}
+          path: o
+          merge-multiple: true
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: o/*.zip
+      - name: Publish immutable derived bundle
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.package.outputs.version }}
+          BUNDLE_NAME: ${{ needs.package.outputs.name }}
+          BUNDLE_SHA256: ${{ needs.package.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          tag="zig-windows-$VERSION-${GITHUB_SHA:0:7}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "$tag already exists; derived bundles are never replaced."
+            exit 1
+          fi
+          cat > notes.md <<EOF
+          Zig $VERSION with a global cache seeded only by the public header and
+          manifest fixtures in [recipe $GITHUB_SHA](https://github.com/$GH_REPO/tree/$GITHUB_SHA/zig-windows).
+          Both helpers were reused on a fresh avrea-windows-2025-4-vcpu runner.
+          Other CPUs may miss the cache and compile normally. Set ZIG_GLOBAL_CACHE_DIR
+          to the extracted global-cache directory to use the seed.
+
+          | Archive | Bytes | SHA-256 |
+          | --- | --- | --- |
+          | $BUNDLE_NAME | $(stat -c %s "o/$BUNDLE_NAME") | $BUNDLE_SHA256 |
+
+          This is a derived bundle, not an upstream-signed archive.
+          Verify with gh attestation verify $BUNDLE_NAME --repo $GH_REPO.
+          EOF
+          gh release create "$tag" o/* --target "$GITHUB_SHA" --latest=false \
+            --title "Zig $VERSION Windows CI cache" --notes-file notes.md
