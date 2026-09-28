@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# Usage: zig/fetch HOST DIR
+# Usage: zig/fetch HOST DIR [--upstream-fallback]
 #
 # Downloads the Zig archive pinned for HOST in zig/TOOLCHAIN, and upstream's
 # .minisig beside it, into DIR, and checks the archive's SHA-256. Tries the
-# pinned URL (this repository's release) first, then Zig's community mirrors in
-# random order, then ziglang.org, so a bump works before its release exists.
+# pinned mirror only. The mirror-production workflow opts into upstream
+# fallback so it can publish a new version before that mirror exists.
 set -euo pipefail
 
 host=$1 dir=$2
+fallback=${3:-}
+[[ -z "$fallback" || "$fallback" == --upstream-fallback ]] || { echo "Unknown option: $fallback" >&2; exit 1; }
 toolchain=$(dirname "$0")/TOOLCHAIN
 line=$(grep "^$host " "$toolchain") || { echo "zig/fetch: no $host in $toolchain" >&2; exit 1; }
 read -r _ sha url <<< "$line"
@@ -21,12 +23,14 @@ sha256() {
 get() { curl -fsSL --retry 2 --connect-timeout 10 --max-time 900 -o "$2" "$1"; }
 
 sources=("${url%/*}/$name")
-if mirrors=$(curl -fsSL --retry 2 --max-time 30 https://ziglang.org/download/community-mirrors.txt); then
-  while read -r mirror; do
-    sources+=("$mirror/$name?source=lizzie-deps")
-  done < <(awk 'BEGIN { srand() } NF { print rand() "\t" $0 }' <<< "$mirrors" | sort -n | cut -f 2-)
+if [[ "$fallback" == --upstream-fallback ]]; then
+  if mirrors=$(curl -fsSL --retry 2 --max-time 30 https://ziglang.org/download/community-mirrors.txt); then
+    while read -r mirror; do
+      sources+=("$mirror/$name?source=lizzie-deps")
+    done < <(awk 'BEGIN { srand() } NF { print rand() "\t" $0 }' <<< "$mirrors" | sort -n | cut -f 2-)
+  fi
+  sources+=("https://ziglang.org/download/$version/$name")
 fi
-sources+=("https://ziglang.org/download/$version/$name")
 
 mkdir -p "$dir"
 for source in "${sources[@]}"; do

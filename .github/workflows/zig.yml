@@ -60,7 +60,7 @@ jobs:
             [[ "$sha" =~ ^[0-9a-f]{64}$ ]] || { echo "$host: bad SHA-256"; exit 1; }
             [[ "$url" == "$prefix"* ]] || { echo "$host: URL must start with $prefix"; exit 1; }
             name=${url##*/}
-            zig/fetch "$host" o
+            zig/fetch "$host" o --upstream-fallback
             # The trusted comment names the signed file, which stops a signature
             # for one archive (or an older version) vouching for another.
             comment=$(minisign -V -P "$ZIG_KEY" -m "o/$name" -Q)
