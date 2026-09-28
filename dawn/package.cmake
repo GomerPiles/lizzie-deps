@@ -1,11 +1,13 @@
 # Packages an installed Dawn build as <OUTPUT_DIR>/dawn-<rev12>-<TARGET>.tar.gz
-# plus a matching .sha256 file. Run in script mode:
+# plus a matching .sha256 file. A build that produces a PDB also gets a
+# separate dawn-<rev12>-<TARGET>-symbols.tar.gz. Run in script mode:
 #
 #   cmake -D SOURCE_DIR=... -D BINARY_DIR=... -D TARGET=... -D RECIPE_COMMIT=...
 #         -D OUTPUT_DIR=... -P dawn/package.cmake
 #
 # The archive has one root directory named like the archive, containing
 # include/, lib/ (and bin/ on Windows), LICENSE, notices/ and BUILDINFO.txt.
+# The symbols archive holds the PDB, LICENSE and the same BUILDINFO.txt.
 cmake_minimum_required(VERSION 3.22)
 
 foreach(var SOURCE_DIR BINARY_DIR TARGET RECIPE_COMMIT OUTPUT_DIR)
@@ -30,8 +32,12 @@ endif()
 string(SUBSTRING "${revision}" 0 12 short_revision)
 set(name "dawn-${short_revision}-${TARGET}")
 set(stage "${OUTPUT_DIR}/${name}")
-set(archive "${OUTPUT_DIR}/${name}.tar.gz")
-file(REMOVE_RECURSE "${stage}" "${archive}" "${archive}.sha256")
+set(symbols_name "${name}-symbols")
+set(symbols_stage "${OUTPUT_DIR}/${symbols_name}")
+file(REMOVE_RECURSE "${stage}" "${symbols_stage}")
+file(REMOVE
+    "${OUTPUT_DIR}/${name}.tar.gz" "${OUTPUT_DIR}/${name}.tar.gz.sha256"
+    "${OUTPUT_DIR}/${symbols_name}.tar.gz" "${OUTPUT_DIR}/${symbols_name}.tar.gz.sha256")
 
 execute_process(
     COMMAND "${CMAKE_COMMAND}" --install "${BINARY_DIR}" --config Release --prefix "${stage}"
@@ -42,13 +48,14 @@ load_cache("${BINARY_DIR}" READ_WITH_PREFIX cache_
 if(cache_DAWN_BUILD_MONOLITHIC_LIBRARY STREQUAL "SHARED")
     if("${TARGET}" MATCHES "windows")
         set(required include/dawn/webgpu.h lib/webgpu_dawn.lib bin/webgpu_dawn.dll)
+        set(symbols bin/webgpu_dawn.pdb)
     else()
         message(FATAL_ERROR "No shared-library layout is defined for ${TARGET}")
     endif()
 else()
     set(required include/dawn/webgpu.h lib/libwebgpu_dawn.a)
 endif()
-foreach(path IN LISTS required)
+foreach(path IN LISTS required symbols)
     if(NOT EXISTS "${stage}/${path}")
         message(FATAL_ERROR "Installed Dawn is missing ${path}")
     endif()
@@ -70,7 +77,7 @@ endforeach()
 
 # Record the provenance and effective build settings next to the binaries.
 file(STRINGS "${BINARY_DIR}/CMakeCache.txt" settings
-    REGEX "^(DAWN_|TINT_|ABSL_MSVC|CMAKE_BUILD_TYPE|CMAKE_OSX_|CMAKE_MSVC_RUNTIME|CMAKE_GENERATOR:)")
+    REGEX "^(DAWN_|TINT_|ABSL_MSVC|CMAKE_BUILD_TYPE|CMAKE_OSX_|CMAKE_MSVC_|CMAKE_SHARED_LINKER_FLAGS_RELEASE|CMAKE_C_COMPILER_TARGET|CMAKE_C_FLAGS:|CMAKE_CXX_FLAGS:|CMAKE_GENERATOR:)")
 # Directory entries hold machine-local paths; *-STRINGS entries are UI hints.
 list(FILTER settings EXCLUDE REGEX "(_DIR|-STRINGS):|:PATH=")
 file(GLOB compiler_files "${BINARY_DIR}/CMakeFiles/*/CMakeCXXCompiler.cmake")
@@ -85,12 +92,30 @@ file(WRITE "${stage}/BUILDINFO.txt"
     "recipe: https://github.com/GomerPiles/lizzie-deps/tree/${RECIPE_COMMIT}\n"
     "\n${compiler}\n\n${settings}\n")
 
-execute_process(
-    COMMAND "${CMAKE_COMMAND}" -E tar czf "${archive}" --format=gnutar "--mtime=2000-01-01 00:00:00 UTC"
-        "${name}"
-    WORKING_DIRECTORY "${OUTPUT_DIR}"
-    COMMAND_ERROR_IS_FATAL ANY)
-file(SHA256 "${archive}" digest)
-file(SIZE "${archive}" size)
-file(WRITE "${archive}.sha256" "${digest}  ${name}.tar.gz\n")
-message(STATUS "${name}.tar.gz ${size} bytes sha256 ${digest}")
+# Symbols download separately; the binaries archive keeps only what links.
+if(symbols)
+    file(MAKE_DIRECTORY "${symbols_stage}")
+    foreach(path IN LISTS symbols)
+        cmake_path(GET path FILENAME file_name)
+        file(RENAME "${stage}/${path}" "${symbols_stage}/${file_name}")
+    endforeach()
+    file(COPY "${stage}/LICENSE" "${stage}/BUILDINFO.txt" DESTINATION "${symbols_stage}")
+endif()
+
+function(write_archive archive_name)
+    set(archive "${OUTPUT_DIR}/${archive_name}.tar.gz")
+    execute_process(
+        COMMAND "${CMAKE_COMMAND}" -E tar czf "${archive}" --format=gnutar
+            "--mtime=2000-01-01 00:00:00 UTC" "${archive_name}"
+        WORKING_DIRECTORY "${OUTPUT_DIR}"
+        COMMAND_ERROR_IS_FATAL ANY)
+    file(SHA256 "${archive}" digest)
+    file(SIZE "${archive}" size)
+    file(WRITE "${archive}.sha256" "${digest}  ${archive_name}.tar.gz\n")
+    message(STATUS "${archive_name}.tar.gz ${size} bytes sha256 ${digest}")
+endfunction()
+
+write_archive("${name}")
+if(symbols)
+    write_archive("${symbols_name}")
+endif()

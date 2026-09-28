@@ -1,10 +1,16 @@
 name: dawn
 
-# Pull requests build every target without publishing anything. A manual run on
-# main builds every target and publishes one immutable release for this recipe
-# commit. No Actions artifacts are stored: binaries go straight to the release.
+# Pull requests build every target without publishing anything. A push to main
+# that changes the recipe, or a manual run on main, builds every target and
+# publishes one immutable release for that recipe commit. No Actions artifacts
+# are stored: binaries go straight to the release.
 on:
   pull_request:
+    paths:
+      - dawn/**
+      - .github/workflows/dawn.yml
+  push:
+    branches: [main]
     paths:
       - dawn/**
       - .github/workflows/dawn.yml
@@ -18,7 +24,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  PUBLISH: ${{ github.event_name == 'workflow_dispatch' }}
+  PUBLISH: ${{ github.event_name != 'pull_request' }}
   GH_REPO: ${{ github.repository }}
 
 jobs:
@@ -103,6 +109,17 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build
 
+      # The Linux cache files compile with the pinned `zig cc`; the wrappers read $ZIG.
+      - name: Install Zig (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          read -r _ sha url < <(grep "^$(uname -m)-linux " r/dawn/zig/TOOLCHAIN)
+          curl -fsSL --retry 3 -o zig.tar.xz "$url"
+          echo "$sha  zig.tar.xz" | sha256sum -c -
+          mkdir zig && tar -xJf zig.tar.xz -C zig --strip-components 1
+          echo "ZIG=$PWD/zig/zig" >> "$GITHUB_ENV"
+
       - name: Install Ninja (macOS)
         if: runner.os == 'macOS'
         env:
@@ -113,6 +130,8 @@ jobs:
         run: |
           set -euo pipefail
           git config --global core.longpaths true
+          # Keep upstream LF endings so every target ships byte-identical headers.
+          git config --global core.autocrlf false
           git init -q d
           git -C d fetch -q --depth 1 https://github.com/google/dawn.git "$REVISION"
           git -C d checkout -q FETCH_HEAD
@@ -142,7 +161,7 @@ jobs:
 
   publish:
     needs: [prepare, build]
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     permissions:
       contents: write

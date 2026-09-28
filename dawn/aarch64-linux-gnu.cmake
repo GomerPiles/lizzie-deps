@@ -1,2 +1,3 @@
-# Linux aarch64 GNU, built natively on an arm64 runner.
+# Linux aarch64 GNU.
+set(CMAKE_SYSTEM_PROCESSOR aarch64 CACHE STRING "")
 include("${CMAKE_CURRENT_LIST_DIR}/linux-gnu.cmake")
