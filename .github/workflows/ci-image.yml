@@ -56,7 +56,7 @@ jobs:
           docker build --platform "linux/$ARCH" \
             --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
             --label "org.opencontainers.image.revision=$GITHUB_SHA" \
-            --tag "$IMAGE:${GITHUB_SHA:0:7}-$ARCH" ci-image
+            --tag "$IMAGE:${GITHUB_SHA:0:7}-$ARCH" --file ci-image/Containerfile ci-image
 
       - name: Push architecture image
         if: env.PUBLISH == 'true'
