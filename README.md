@@ -1,12 +1,13 @@
 # lizzie-deps
 
 Prebuilt third-party libraries for [Lizzie](https://github.com/GomerPiles/lizzie),
-built from upstream source by GitHub Actions and published as GitHub Releases.
+built from upstream source by GitHub Actions and published as GitHub Releases,
+plus a mirror of the pinned [Zig](#zig) toolchain.
 Nothing here is stored as an Actions artifact; binaries go straight to a release,
 which does not count against Actions or Packages storage.
 
-Every published archive has a `.sha256` file beside it and a signed build
-provenance attestation that ties it to the workflow run and recipe commit:
+Every published archive has a `.sha256` file beside it. Built archives also
+have a signed build provenance attestation that ties it to the workflow run and recipe commit:
 
 ```sh
 gh attestation verify dawn-<rev>-<target>.tar.gz --repo GomerPiles/lizzie-deps
@@ -23,7 +24,7 @@ recipe or upstream revision produces a new release.
 | `dawn/common.cmake` | Settings shared by every target |
 | `dawn/<target>.cmake` | Backends, library type and platform settings for one target |
 | `dawn/package.cmake` | Install, license collection, `BUILDINFO.txt`, archives and checksums |
-| `dawn/zig/` | `zig cc`/`c++`/`ar`/`ranlib` wrappers and the pinned Zig (`TOOLCHAIN`) for Linux |
+| `dawn/zig/` | `zig cc`/`c++`/`ar`/`ranlib` wrappers for Linux |
 | `.github/workflows/dawn.yml` | Runner per target, build, attestation and release |
 
 | Target | Runner | Output |
@@ -40,10 +41,10 @@ revisions, compiler and effective CMake settings. Release builds carry no debug
 info, except Windows: its `webgpu_dawn.pdb` ships separately as
 `dawn-<rev12>-x86_64-windows-symbols.tar.gz` (PDB, `LICENSE`, `BUILDINFO.txt`).
 
-Linux archives are compiled by the Zig pinned in `dawn/zig/TOOLCHAIN` against
-Zig's bundled libc++, so they carry no libstdc++ dependency. Consumers must link
-libc++ from the same Zig version (`linkLibCpp()`); keep `TOOLCHAIN` equal to
-Lizzie's `zig-toolchain.lock` and rebuild Dawn when that pin changes.
+Linux archives are compiled by the Zig pinned in `zig/TOOLCHAIN` against Zig's
+bundled libc++, so they carry no libstdc++ dependency. Consumers must link
+libc++ from the same Zig version (`linkLibCpp()`). Changing `zig/TOOLCHAIN`
+rebuilds Dawn.
 
 ### Changing the build
 
@@ -61,8 +62,8 @@ run the **dawn** workflow on `main` manually (Actions → dawn → Run workflow)
 ### Building locally
 
 Requires CMake 3.22+, Ninja (or Visual Studio on Windows), Python 3 and Git.
-Linux targets also need the pinned Zig as `zig` on `PATH` or in `$ZIG`; they
-cross-compile from any host.
+Linux targets also need the pinned Zig as `zig` on `PATH` or in `$ZIG`
+(`zig/fetch <host> <dir>` downloads it); they cross-compile from any host.
 
 ```sh
 git init -q d && git -C d fetch --depth 1 https://github.com/google/dawn.git $(cat dawn/REVISION)
@@ -71,3 +72,27 @@ cmake -S d -B b -G Ninja -C dawn/aarch64-macos.cmake
 cmake --build b --config Release
 cmake -D SOURCE_DIR=d -D BINARY_DIR=b -D TARGET=aarch64-macos -D RECIPE_COMMIT=local -D OUTPUT_DIR=o -P dawn/package.cmake
 ```
+
+## Zig
+
+Zig asks CI not to download from ziglang.org, so the archives Lizzie needs are
+mirrored here, unmodified, to release `zig-<version>`, each with upstream's
+`.minisig` and a `.sha256`. Nothing is built, so there is no attestation;
+verify with Zig's key instead:
+
+```sh
+minisign -V -P RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U -m zig-<host>-<version>.tar.xz
+```
+
+| File | Owns |
+| --- | --- |
+| `zig/TOOLCHAIN` | Version, and per host the upstream SHA-256 and the mirrored URL; same format as Lizzie's `zig-toolchain.lock` |
+| `zig/fetch` | Downloads one host's archive and signature: the mirrored URL, then Zig's community mirrors, then ziglang.org |
+| `.github/workflows/zig.yml` | Download, SHA-256 and signature checks, release |
+
+**Bump Zig:** in `zig/TOOLCHAIN`, change the version and, for each host, the
+SHA-256 from [index.json](https://ziglang.org/download/index.json) and the
+version in the URL. Pull requests verify every archive without publishing;
+merging publishes `zig-<version>` and rebuilds Dawn. Then copy `zig/TOOLCHAIN`'s
+pins into Lizzie's `zig-toolchain.lock`. Adding a host for the same version
+adds its files to the existing release; files already published never change.
