@@ -61,6 +61,14 @@ foreach(path IN LISTS required symbols)
     endif()
 endforeach()
 
+# Debuggers find the PDB by the bare file name recorded in the DLL.
+if(symbols)
+    file(STRINGS "${stage}/bin/webgpu_dawn.dll" pdb_names REGEX "\\.pdb")
+    if(NOT "webgpu_dawn.pdb" IN_LIST pdb_names)
+        message(FATAL_ERROR "webgpu_dawn.dll does not name webgpu_dawn.pdb: ${pdb_names}")
+    endif()
+endif()
+
 # Dawn's own license, then the license files of each compiled-in dependency.
 file(COPY "${SOURCE_DIR}/LICENSE" DESTINATION "${stage}")
 foreach(dir IN LISTS cache_LIZZIE_NOTICE_DIRS)

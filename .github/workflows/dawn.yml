@@ -130,7 +130,7 @@ jobs:
         run: |
           set -euo pipefail
           git config --global core.longpaths true
-          # Keep upstream LF endings so every target ships byte-identical headers.
+          # Keep upstream LF endings in the sources and license files we package.
           git config --global core.autocrlf false
           git init -q d
           git -C d fetch -q --depth 1 https://github.com/google/dawn.git "$REVISION"
