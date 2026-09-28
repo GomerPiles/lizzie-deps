@@ -6,15 +6,16 @@ include("${CMAKE_CURRENT_LIST_DIR}/common.cmake")
 set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded CACHE STRING "")
 set(ABSL_MSVC_STATIC_RUNTIME ON CACHE BOOL "")
 
-# Optimized code with a PDB for the DLL, published as a separate symbols
-# archive. /Z7 keeps debug info in each object so parallel compiles never share
-# a PDB; /DEBUG turns off /OPT:REF and /OPT:ICF, so they are restored, and
-# /PDBALTPATH records only the PDB's file name instead of the runner's path.
+# Optimized code with separate PDBs for the static library and the DLL, each
+# published as its own symbols archive. /Zi keeps debug info out of the objects;
+# dawn/windows gathers every archived object's debug info into one compiler PDB.
+# /DEBUG turns off /OPT:REF and /OPT:ICF, so they are restored, and
+# /PDBALTPATH records only the DLL PDB's file name instead of the runner's path.
 # The name is literal because MSBuild mangles the linker's %_PDB% to
 # %webgpu_dawn.pdb%; webgpu_dawn is the only shared library in this build, and
 # package.cmake checks the recorded name.
 set(CMAKE_POLICY_DEFAULT_CMP0141 NEW CACHE STRING "")
-set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT Embedded CACHE STRING "")
+set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT ProgramDatabase CACHE STRING "")
 set(CMAKE_SHARED_LINKER_FLAGS_RELEASE
     "/INCREMENTAL:NO /DEBUG /OPT:REF /OPT:ICF /PDBALTPATH:webgpu_dawn.pdb" CACHE STRING "")
 

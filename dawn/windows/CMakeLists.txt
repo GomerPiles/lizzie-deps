@@ -8,6 +8,25 @@ if(NOT DEFINED DAWN_SOURCE_DIR)
 endif()
 add_subdirectory("${DAWN_SOURCE_DIR}" upstream)
 
+# Every object bundled into the static archive writes one compiler PDB, which
+# ships beside the archive in its own symbols package. /FS serializes the
+# parallel compilers that share it.
+set(static_pdb_dir "${CMAKE_CURRENT_BINARY_DIR}/static_pdb")
+get_target_property(bundled webgpu_dawn SOURCES)
+string(REGEX MATCHALL "\\$<TARGET_OBJECTS:[^>]+>" bundled "${bundled}")
+string(REGEX REPLACE "\\$<TARGET_OBJECTS:([^>]+)>" "\\1" bundled "${bundled}")
+if(NOT bundled)
+    message(FATAL_ERROR "webgpu_dawn bundles no object targets")
+endif()
+foreach(target IN LISTS bundled)
+    set_target_properties(${target} PROPERTIES
+        COMPILE_PDB_NAME webgpu_dawn_static
+        COMPILE_PDB_OUTPUT_DIRECTORY_RELEASE "${static_pdb_dir}")
+    target_compile_options(${target} PRIVATE /FS)
+endforeach()
+install(FILES "${static_pdb_dir}/webgpu_dawn_static.pdb"
+    DESTINATION lib CONFIGURATIONS Release)
+
 # Dawn is compiled once into a static archive. Export only its public C API
 # when linking the DLL; static objects contain no dllexport directives.
 set(exports "${CMAKE_CURRENT_BINARY_DIR}/webgpu_dawn.def")
