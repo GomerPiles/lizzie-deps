@@ -1,6 +1,6 @@
-# Linux image for Lizzie's CI suites and local container checks: Ubuntu 24.04 from a
-# pinned snapshot, Weston 13 and lavapipe for the Wayland and rendering checks, and Node
-# with Playwright's Chromium for the browser suite. Built natively per architecture.
+# Linux CI image: Ubuntu 24.04 from a pinned snapshot, Weston 13 and lavapipe for
+# Wayland and rendering checks, and Node with Playwright's headless Chromium for browser
+# tests. Built natively per architecture.
 # ubuntu:noble-20250805 multi-architecture index.
 FROM docker.io/library/ubuntu@sha256:9cbed754112939e914291337b5e554b07ad7c392491dba6daf25eef1332a22e8
 ARG TARGETARCH
@@ -13,7 +13,7 @@ COPY ubuntu.sources /etc/apt/sources.list.d/ubuntu.sources
 RUN ["apt-get", "update", "--error-on=any"]
 # Vulkan loader and lavapipe render without a GPU.
 RUN ["apt-get", "install", "-y", "--no-install-recommends", "ca-certificates", "curl", "xz-utils", "pkg-config", "libc6-dev", "libwayland-dev", "libxkbcommon-dev", "libweston-13-dev", "weston", "libvulkan1", "mesa-vulkan-drivers"]
-# Lizzie's web/.node-version. Checksums from https://nodejs.org/dist/v26.10.0/SHASUMS256.txt.
+# Checksums from https://nodejs.org/dist/v26.10.0/SHASUMS256.txt.
 RUN set -eu; \
     case "$TARGETARCH" in \
         amd64) arch=x64; sha256=ca70e9e349de048b9522abb3adc05b3bd6f43c5ffd3ec57916c7da292f59f022 ;; \
@@ -25,11 +25,11 @@ RUN set -eu; \
     tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 --wildcards '*/bin' '*/lib' '*/include'; \
     rm /tmp/node.tar.xz; \
     node --version
-# Lizzie's web/package-lock.json Playwright and its headless Chromium, with the system
-# libraries Chromium needs from the same snapshot.
+# Playwright's headless Chromium, with the system libraries it needs from the same
+# snapshot.
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 RUN npx --yes playwright@1.63.0 install --with-deps --only-shell chromium && \
     rm -rf /root/.npm /var/lib/apt/lists/*
-# Lizzie's npm install uses the browser above rather than downloading one.
+# npm installs of Playwright use the browser above rather than downloading one.
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 WORKDIR /work
