@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Usage: zig/fetch HOST DIR
+#
+# Downloads the Zig archive pinned for HOST in zig/TOOLCHAIN, and upstream's
+# .minisig beside it, into DIR, and checks the archive's SHA-256. Tries the
+# pinned URL (this repository's release) first, then Zig's community mirrors in
+# random order, then ziglang.org, so a bump works before its release exists.
+set -euo pipefail
+
+host=$1 dir=$2
+toolchain=$(dirname "$0")/TOOLCHAIN
+line=$(grep "^$host " "$toolchain") || { echo "zig/fetch: no $host in $toolchain" >&2; exit 1; }
+read -r _ sha url <<< "$line"
+version=$(awk '$1 == "version" { print $2 }' "$toolchain")
+name=${url##*/}
+
+sha256() {
+  if command -v sha256sum > /dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1
+}
+
+get() { curl -fsSL --retry 2 --connect-timeout 10 --max-time 900 -o "$2" "$1"; }
+
+sources=("${url%/*}/$name")
+if mirrors=$(curl -fsSL --retry 2 --max-time 30 https://ziglang.org/download/community-mirrors.txt); then
+  while read -r mirror; do
+    sources+=("$mirror/$name?source=lizzie-deps")
+  done < <(awk 'BEGIN { srand() } NF { print rand() "\t" $0 }' <<< "$mirrors" | sort -n | cut -f 2-)
+fi
+sources+=("https://ziglang.org/download/$version/$name")
+
+mkdir -p "$dir"
+for source in "${sources[@]}"; do
+  signature=${source/"$name"/"$name.minisig"}
+  if get "$source" "$dir/$name" && get "$signature" "$dir/$name.minisig"; then
+    if [[ "$(sha256 "$dir/$name")" == "$sha" ]]; then
+      echo "zig/fetch: $name from ${source%%\?*}"
+      exit 0
+    fi
+    echo "zig/fetch: SHA-256 mismatch from $source" >&2
+  else
+    echo "zig/fetch: failed $source" >&2
+  fi
+  rm -f "$dir/$name" "$dir/$name.minisig"
+done
+echo "zig/fetch: no source had $name with SHA-256 $sha" >&2
+exit 1
