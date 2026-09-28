@@ -61,6 +61,32 @@ foreach(path IN LISTS required symbols)
     endif()
 endforeach()
 
+# Debuggers find the PDB by the bare file name recorded in the DLL.
+if(symbols)
+    file(STRINGS "${stage}/bin/webgpu_dawn.dll" pdb_names REGEX "\\.pdb")
+    if(NOT "webgpu_dawn.pdb" IN_LIST pdb_names)
+        message(FATAL_ERROR "webgpu_dawn.dll does not name webgpu_dawn.pdb: ${pdb_names}")
+    endif()
+endif()
+
+# Dawn generates headers such as webgpu.h during the build, and on Windows its
+# generator writes CRLF. Ship LF headers so every target's are byte-identical.
+# file(READ) drops carriage returns, so a header whose text is shorter than the
+# file has CRLF endings; writing the text back leaves LF only.
+file(GLOB_RECURSE headers "${stage}/include/*")
+foreach(header IN LISTS headers)
+    file(READ "${header}" content)
+    string(LENGTH "${content}" length)
+    file(SIZE "${header}" size)
+    if(NOT size EQUAL length)
+        file(WRITE "${header}" "${content}")
+        file(SIZE "${header}" size)
+        if(NOT size EQUAL length)
+            message(FATAL_ERROR "Could not normalize line endings in ${header}")
+        endif()
+    endif()
+endforeach()
+
 # Dawn's own license, then the license files of each compiled-in dependency.
 file(COPY "${SOURCE_DIR}/LICENSE" DESTINATION "${stage}")
 foreach(dir IN LISTS cache_LIZZIE_NOTICE_DIRS)

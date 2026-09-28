@@ -10,10 +10,13 @@ set(ABSL_MSVC_STATIC_RUNTIME ON CACHE BOOL "")
 # archive. /Z7 keeps debug info in each object so parallel compiles never share
 # a PDB; /DEBUG turns off /OPT:REF and /OPT:ICF, so they are restored, and
 # /PDBALTPATH records only the PDB's file name instead of the runner's path.
+# The name is literal because MSBuild mangles the linker's %_PDB% to
+# %webgpu_dawn.pdb%; webgpu_dawn is the only shared library in this build, and
+# package.cmake checks the recorded name.
 set(CMAKE_POLICY_DEFAULT_CMP0141 NEW CACHE STRING "")
 set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT Embedded CACHE STRING "")
 set(CMAKE_SHARED_LINKER_FLAGS_RELEASE
-    "/INCREMENTAL:NO /DEBUG /OPT:REF /OPT:ICF /PDBALTPATH:%_PDB%" CACHE STRING "")
+    "/INCREMENTAL:NO /DEBUG /OPT:REF /OPT:ICF /PDBALTPATH:webgpu_dawn.pdb" CACHE STRING "")
 
 set(DAWN_BUILD_MONOLITHIC_LIBRARY SHARED CACHE STRING "")
 set(DAWN_ENABLE_D3D12 ON CACHE BOOL "")
