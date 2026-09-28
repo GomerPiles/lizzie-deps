@@ -9,12 +9,14 @@ name: zig
 on:
   pull_request:
     paths:
-      - zig/**
+      - zig/TOOLCHAIN
+      - zig/fetch
       - .github/workflows/zig.yml
   push:
     branches: [main]
     paths:
-      - zig/**
+      - zig/TOOLCHAIN
+      - zig/fetch
       - .github/workflows/zig.yml
   workflow_dispatch:
 

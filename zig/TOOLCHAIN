@@ -1,6 +1,4 @@
-# The Zig that Lizzie and the Dawn Linux builds use, mirrored to release
-# zig-<version> by .github/workflows/zig.yml. Keep Lizzie's zig-toolchain.lock
-# equal to this file. Metadata: https://ziglang.org/download/index.json
+# Upstream compiler pins used by the mirror, derived bundles, and Linux builds.
 # version VERSION
 # HOST SHA256 HTTPS_URL
 version 0.16.0

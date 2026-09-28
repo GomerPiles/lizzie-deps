@@ -1,5 +1,5 @@
-# Windows x64: D3D12, D3D11 and Vulkan in one DLL with an import library, so
-# consumers link without an MSVC C++ toolchain. The MSVC runtime is static.
+# Windows x64: compile D3D12, D3D11 and Vulkan once into a static library.
+# dawn/windows links a DLL from that archive. Both use the static MSVC runtime.
 # Shader compilation uses the system d3dcompiler_47.dll (FXC); DXC is not built.
 include("${CMAKE_CURRENT_LIST_DIR}/common.cmake")
 
@@ -18,7 +18,7 @@ set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT Embedded CACHE STRING "")
 set(CMAKE_SHARED_LINKER_FLAGS_RELEASE
     "/INCREMENTAL:NO /DEBUG /OPT:REF /OPT:ICF /PDBALTPATH:webgpu_dawn.pdb" CACHE STRING "")
 
-set(DAWN_BUILD_MONOLITHIC_LIBRARY SHARED CACHE STRING "")
+set(DAWN_BUILD_MONOLITHIC_LIBRARY STATIC CACHE STRING "")
 set(DAWN_ENABLE_D3D12 ON CACHE BOOL "")
 set(DAWN_ENABLE_D3D11 ON CACHE BOOL "")
 set(DAWN_ENABLE_VULKAN ON CACHE BOOL "")

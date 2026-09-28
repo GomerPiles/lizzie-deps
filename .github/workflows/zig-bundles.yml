@@ -1,0 +1,119 @@
+name: zig-bundles
+on:
+  pull_request:
+    paths: [zig/**, .github/workflows/zig-bundles.yml]
+  push:
+    branches: [main]
+    paths: [zig/**, .github/workflows/zig-bundles.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: zig-bundles-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix: &hosts
+        include:
+          - host: x86_64-windows
+            runner: avrea-windows-2025-4-vcpu
+          - host: aarch64-macos
+            runner: avrea-macos-26-8-vcpu
+          - host: x86_64-linux
+            runner: machine/cpu=4/tenancy=on_demand
+          - host: aarch64-linux
+            runner: machine/cpu=4/architecture=arm64/tenancy=on_demand
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    env:
+      RUNNER_CLASS: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: runner.os == 'Windows'
+        shell: powershell
+        run: ./zig/package.ps1 -Mode package
+      - if: runner.os != 'Windows'
+        shell: bash
+        run: ./zig/package package '${{ matrix.host }}'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: zig-ci-${{ matrix.host }}
+          path: o/*
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+  verify:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix: *hosts
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: zig-ci-${{ matrix.host }}
+          path: o
+      - if: runner.os == 'Windows'
+        shell: powershell
+        run: ./zig/package.ps1 -Mode verify -Archive (Get-ChildItem o/*.zip).FullName
+      - if: runner.os != 'Windows'
+        shell: bash
+        run: ./zig/package verify '${{ matrix.host }}' o/*.tar.xz
+  publish:
+    needs: [package, verify]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: zig-ci-*
+          path: o
+          merge-multiple: true
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            o/*.zip
+            o/*.tar.xz
+      - name: Publish verified bundles
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          version=$(awk '$1 == "version" { print $2 }' zig/TOOLCHAIN)
+          tag="zig-bundles-$version-${GITHUB_SHA:0:7}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "$tag already exists; bundles are never replaced."; exit 1
+          fi
+          {
+            echo "Zig $version with compiler helper caches, verified on fresh matching runners."
+            echo "Set ZIG_GLOBAL_CACHE_DIR to the extracted global-cache directory."
+            echo "Other CPUs may miss the cache and compile normally."
+            echo "Derived bundles have their own checksums and build attestations."
+            echo
+            echo '| Archive | Bytes | SHA-256 |'
+            echo '| --- | --- | --- |'
+            for sum in o/*.sha256; do
+              archive=${sum%.sha256}
+              echo "| ${archive#o/} | $(stat -c %s "$archive") | $(cut -d' ' -f1 "$sum") |"
+            done
+          } > notes.md
+          gh release create "$tag" o/* --target "$GITHUB_SHA" --latest=false \
+            --title "Zig $version compiler caches" --notes-file notes.md

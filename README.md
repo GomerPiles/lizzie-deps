@@ -1,120 +1,32 @@
-# lizzie-deps
+# Prebuilt dependencies
 
-Prebuilt third-party libraries for [Lizzie](https://github.com/GomerPiles/lizzie),
-built from upstream source by GitHub Actions and published as GitHub Releases,
-plus a mirror of the pinned [Zig](#zig) toolchain.
-Durable binaries live in releases. The Windows Zig cache bundle uses a one-day
-Actions artifact only to verify it on an independent runner before publication.
-
-Every published archive has a `.sha256` file beside it. Built archives also
-have a signed build provenance attestation that ties it to the workflow run and recipe commit:
-
-```sh
-gh attestation verify dawn-<rev>-<target>.tar.gz --repo GomerPiles/lizzie-deps
-```
-
-Consumers pin the archive URL and SHA-256. Releases are never replaced; a new
-recipe or upstream revision produces a new release.
-
-## Dawn
-
-| File | Owns |
-| --- | --- |
-| `dawn/REVISION` | Upstream [google/dawn](https://github.com/google/dawn) commit |
-| `dawn/common.cmake` | Settings shared by every target |
-| `dawn/<target>.cmake` | Backends, library type and platform settings for one target |
-| `dawn/package.cmake` | Install, license collection, `BUILDINFO.txt`, archives and checksums |
-| `dawn/zig/` | `zig cc`/`c++`/`ar`/`ranlib` wrappers for Linux |
-| `.github/workflows/dawn.yml` | Runner per target, build, attestation and release |
-
-| Target | Runner | Output |
-| --- | --- | --- |
-| `aarch64-macos` | `macos-26` | Metal; static `lib/libwebgpu_dawn.a`; macOS 26.0+; system libc++ |
-| `x86_64-linux-gnu` | `ubuntu-24.04` | Vulkan, Wayland WSI; static `lib/libwebgpu_dawn.a`; built by `zig c++`; glibc 2.28+, Zig's libc++ |
-| `aarch64-linux-gnu` | `ubuntu-24.04-arm` | Same as x86_64 |
-| `x86_64-windows` | `windows-2025` | D3D12, D3D11, Vulkan; `bin/webgpu_dawn.dll` + `lib/webgpu_dawn.lib`; static MSVC runtime; system FXC, no DXC; PDB in `-symbols` archive |
-
-Each archive is `dawn-<rev12>-<target>.tar.gz` with a single root directory of
-the same name containing `include/`, `lib/`, `bin/` (Windows), Dawn's `LICENSE`,
-`notices/` for compiled-in dependencies, and `BUILDINFO.txt` with the exact
-revisions, compiler and effective CMake settings. Release builds carry no debug
-info, except Windows: its `webgpu_dawn.pdb` ships separately as
-`dawn-<rev12>-x86_64-windows-symbols.tar.gz` (PDB, `LICENSE`, `BUILDINFO.txt`).
-
-Linux archives are compiled by the Zig pinned in `zig/TOOLCHAIN` against Zig's
-bundled libc++, so they carry no libstdc++ dependency. Consumers must link
-libc++ from the same Zig version (`linkLibCpp()`). Changing `zig/TOOLCHAIN`
-rebuilds Dawn.
-
-### Changing the build
-
-- **Bump Dawn:** edit `dawn/REVISION`.
-- **Change settings:** edit `dawn/common.cmake` or a target file.
-- **Add a target:** add `dawn/<target>.cmake` and a matrix entry in
-  `dawn.yml`. If its library layout differs, extend the check in `package.cmake`.
-
-Pull requests that touch `dawn/` or `dawn.yml` build every target without
-publishing. Merging such a pull request builds again on `main` and publishes
-release `dawn-<rev12>-<recipe7>`; then copy each archive's URL, byte size and
-SHA-256 from the release notes into Lizzie's pins. To retry a failed publish,
-run the **dawn** workflow on `main` manually (Actions → dawn → Run workflow).
-
-### Building locally
-
-Requires CMake 3.22+, Ninja (or Visual Studio on Windows), Python 3 and Git.
-Linux targets also need the pinned Zig as `zig` on `PATH` or in `$ZIG`
-(`zig/fetch <host> <dir>` downloads it); they cross-compile from any host.
-
-```sh
-git init -q d && git -C d fetch --depth 1 https://github.com/google/dawn.git $(cat dawn/REVISION)
-git -C d checkout -q FETCH_HEAD
-cmake -S d -B b -G Ninja -C dawn/aarch64-macos.cmake
-cmake --build b --config Release
-cmake -D SOURCE_DIR=d -D BINARY_DIR=b -D TARGET=aarch64-macos -D RECIPE_COMMIT=local -D OUTPUT_DIR=o -P dawn/package.cmake
-```
+Pinned third-party binaries and Zig toolchains, published as immutable GitHub
+Releases with SHA-256 checksums. Built packages include provenance attestations.
 
 ## Zig
 
-Zig asks CI not to download from ziglang.org, so the archives Lizzie needs are
-mirrored here, unmodified, to release `zig-<version>`, each with upstream's
-`.minisig` and a `.sha256`. Nothing is built, so there is no attestation;
-verify with Zig's key instead:
+`zig/TOOLCHAIN` pins the upstream compiler archives. `zig/fetch` downloads and
+verifies them; the `zig` workflow maintains an unmodified mirror.
 
-```sh
-minisign -V -P RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U -m zig-<host>-<version>.tar.xz
-```
+The `zig-bundles` workflow adds a compiler-helper cache for Linux x86_64/aarch64,
+macOS aarch64, and Windows x86_64. Only the tiny public fixtures under `zig/`
+are used. Each bundle is checked on a fresh matching runner before publication.
+Set `ZIG_GLOBAL_CACHE_DIR` to its `global-cache` directory to use the seed.
+Other CPUs may miss the cache and compile normally. Derived bundles have their
+own checksums and attestations; upstream signatures cover only upstream archives.
 
-| File | Owns |
-| --- | --- |
-| `zig/TOOLCHAIN` | Version, and per host the upstream SHA-256 and the mirrored URL; same format as Lizzie's `zig-toolchain.lock` |
-| `zig/fetch` | Downloads one host's archive and signature: the mirrored URL, then Zig's community mirrors, then ziglang.org |
-| `.github/workflows/zig.yml` | Download, SHA-256 and signature checks, release |
+## Dawn
 
-**Bump Zig:** in `zig/TOOLCHAIN`, change the version and, for each host, the
-SHA-256 from [index.json](https://ziglang.org/download/index.json) and the
-version in the URL. Pull requests verify every archive without publishing;
-merging publishes `zig-<version>` and rebuilds Dawn. Then copy `zig/TOOLCHAIN`'s
-pins into Lizzie's `zig-toolchain.lock`. Adding a host for the same version
-adds its files to the existing release; files already published never change.
+`dawn/REVISION` pins the source; `dawn/*.cmake` defines build and packaging settings.
+The `dawn` workflow builds optimized libraries for Linux x86_64/aarch64, macOS
+aarch64, and Windows x86_64. Archives include matching headers and licenses.
 
-### Windows CI cache bundle
+Windows provides separate static and shared packages from one compilation. The
+static package contains `webgpu_dawn.lib`; the shared package contains
+`webgpu_dawn.dll` and its import library, `webgpu_dawn_dll.lib`. DLL symbols ship
+separately. Both use the static MSVC runtime; static consumers need compatible
+MSVC C++ runtime and Windows SDK libraries.
 
-`zig-windows/` builds a separate derived ZIP containing the unmodified upstream
-compiler and libraries plus `global-cache/`. An empty cache is warmed using only
-the public `warmup.h`, `warmup.zig`, and `warmup.manifest` fixtures. No application
-repository, dependency, or application cache is checked out or packaged.
-
-Zig 0.16 compiles its C translator and Windows resource compiler on first use.
-The bundle avoids that cost on matching `avrea-windows-2025-4-vcpu` machines.
-These helper cache entries depend on the host target/CPU; other machines can
-miss and compile normally. Point `ZIG_GLOBAL_CACHE_DIR` at the extracted
-`global-cache` directory. It is writable; compiler and library files stay unchanged.
-
-`.github/workflows/zig-windows.yml` packages on one Windows runner and verifies
-on a fresh matching runner at a different path. Verification checks that neither
-helper is rebuilt, as well as running the tiny executable. Main publishes only
-after this passes, to immutable `zig-windows-<version>-<recipe7>` releases with
-a SHA-256 file and build provenance attestation. `CACHE-SEED.json` records the
-upstream checksum, recipe and CPU. Upstream mirror signatures do not cover this
-derived archive. Consumers pin its own URL and checksum; `zig/TOOLCHAIN` continues
-to describe the unmodified upstream mirrors.
+Linux uses the pinned Zig and its libc++; macOS uses the system libc++ and requires
+macOS 26+. Change the revision or recipe, validate the pull request, then merge
+to publish new archives. Existing release assets are never replaced.
