@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Bootstrap a compiler bundle and verify its helper cache after relocation.
+# Usage: zig/package package|verify HOST [ARCHIVE]
+set -euo pipefail
+mode=$1 host=$2
+scripts=$(cd "$(dirname "$0")" && pwd)
+repo=$(dirname "$scripts")
+version=$(awk '$1 == "version" { print $2 }' "$scripts/TOOLCHAIN")
+read -r _ upstream_sha url <<< "$(grep "^$host " "$scripts/TOOLCHAIN")"
+case "$host" in aarch64-macos|x86_64-linux|aarch64-linux) ;; *) echo "Unsupported host: $host" >&2; exit 1;; esac
+work=$(mktemp -d "${TMPDIR:-/tmp}/zig-seed.XXXXXXXX")
+trap 'rm -rf "$work"' EXIT
+root="zig-$host-$version"
+install="$work/$root"
+export ZIG_GLOBAL_CACHE_DIR="$install/global-cache"
+sha256() {
+    if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1
+}
+warmup() {
+    local zig="$install/zig"
+    [[ $("$zig" version) == "$version" ]]
+    echo 'Warm C translator'
+    time "$zig" translate-c "$scripts/warmup.h" --cache-dir "$work/local-cache" >/dev/null
+    # Resource compilation is useful for cross-compiling Windows too. No SDK or CRT is needed.
+    echo 'Warm Windows resource compiler'
+    (cd "$scripts"; time "$zig" rc /fo "$work/warmup.res" warmup.rc)
+    test -s "$work/warmup.res"
+}
+helpers() {
+    local count=0 file modified
+    while IFS= read -r file; do
+        if [[ "$host" == *-macos ]]; then modified=$(stat -f %m "$file"); else modified=$(stat -c %Y "$file"); fi
+        printf '%s|%s|%s\n' "${file#"$install/"}" "$modified" "$(sha256 "$file")"
+        count=$((count + 1))
+    done < <(find "$ZIG_GLOBAL_CACHE_DIR/o" -type f \( -name translate-c -o -name resinator \) | sort)
+    [[ $count == 2 ]] || { echo "Expected two compiler helpers, found $count" >&2; exit 1; }
+}
+case "$mode" in
+package)
+    "$scripts/fetch" "$host" "$work/download"
+    tar -xJf "$work/download/${url##*/}" -C "$work"
+    test ! -e "$ZIG_GLOBAL_CACHE_DIR"
+    warmup
+    helpers > "$work/helpers"
+    cat > "$install/CACHE-SEED.txt" <<META
+zig_version: $version
+upstream_sha256: $upstream_sha
+recipe_commit: ${GITHUB_SHA:-local}
+runner_class: ${RUNNER_CLASS:-local}
+inputs: warmup.h, warmup.rc, warmup.manifest
+META
+    "$install/zig" env >> "$install/CACHE-SEED.txt"
+    mkdir -p "$repo/o"
+    name="$root-ci.tar.xz"
+    tar -cJf "$repo/o/$name" -C "$work" "$root"
+    sha=$(sha256 "$repo/o/$name")
+    printf '%s  %s\n' "$sha" "$name" > "$repo/o/$name.sha256"
+    if [[ -n ${GITHUB_OUTPUT:-} ]]; then
+        printf 'name=%s\nsha256=%s\nversion=%s\n' "$name" "$sha" "$version" >> "$GITHUB_OUTPUT"
+    fi
+    ;;
+verify)
+    archive=$3
+    [[ $(sha256 "$archive") == "$(cut -d' ' -f1 "$archive.sha256")" ]]
+    tar -xJf "$archive" -C "$work"
+    helpers > "$work/before"
+    warmup
+    helpers > "$work/after"
+    cmp "$work/before" "$work/after"
+    echo 'PASS: compiler helpers reused after relocation on a fresh runner'
+    ;;
+*) echo 'Expected package or verify' >&2; exit 1;;
+esac

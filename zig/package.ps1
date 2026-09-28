@@ -71,7 +71,7 @@ try {
             zig_version = $version
             upstream_sha256 = $checksum
             recipe_commit = $env:GITHUB_SHA
-            runner_class = 'avrea-windows-2025-4-vcpu'
+            runner_class = $env:RUNNER_CLASS
             processor = $cpu
             inputs = @('warmup.h', 'warmup.zig', 'warmup.manifest')
         } | ConvertTo-Json
