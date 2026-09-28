@@ -17,7 +17,7 @@ add_custom_command(OUTPUT "${exports}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/exports.cmake"
     DEPENDS webgpu_dawn "${CMAKE_CURRENT_SOURCE_DIR}/exports.cmake"
     VERBATIM)
-add_library(webgpu_dawn_shared SHARED "${exports}")
+add_library(webgpu_dawn_shared SHARED shared_anchor.cpp "${exports}")
 set_target_properties(webgpu_dawn_shared PROPERTIES
     LINKER_LANGUAGE CXX
     OUTPUT_NAME webgpu_dawn
@@ -40,6 +40,7 @@ foreach(kind static shared)
     else()
         target_compile_definitions(smoke_${kind} PRIVATE WGPU_SHARED_LIBRARY)
         target_link_libraries(smoke_${kind} PRIVATE webgpu_dawn_shared)
+        add_dependencies(smoke_${kind} webgpu_dawn_shared)
     endif()
     set_target_properties(smoke_${kind} PROPERTIES LINKER_LANGUAGE CXX)
     add_test(NAME smoke_${kind} COMMAND smoke_${kind})
