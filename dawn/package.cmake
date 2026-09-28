@@ -72,14 +72,19 @@ endif()
 # Dawn generates headers such as webgpu.h during the build, and on Windows its
 # generator writes CRLF. Ship LF headers so every target's are byte-identical.
 # file(READ) drops carriage returns, so a header whose text is shorter than the
-# file has CRLF endings; writing the text back leaves LF only.
+# file has CRLF endings. file(WRITE) would restore CRLF on Windows, so write
+# through file(CONFIGURE), which fixes the newline style, after checking that the
+# header has nothing it would substitute.
 file(GLOB_RECURSE headers "${stage}/include/*")
 foreach(header IN LISTS headers)
     file(READ "${header}" content)
     string(LENGTH "${content}" length)
     file(SIZE "${header}" size)
     if(NOT size EQUAL length)
-        file(WRITE "${header}" "${content}")
+        if(content MATCHES "@[A-Za-z_][A-Za-z0-9_]*@|#cmakedefine")
+            message(FATAL_ERROR "Cannot normalize ${header}: it has CMake configure syntax")
+        endif()
+        file(CONFIGURE OUTPUT "${header}" CONTENT "${content}" @ONLY NEWLINE_STYLE UNIX)
         file(SIZE "${header}" size)
         if(NOT size EQUAL length)
             message(FATAL_ERROR "Could not normalize line endings in ${header}")
