@@ -13,6 +13,8 @@ COPY ubuntu.sources /etc/apt/sources.list.d/ubuntu.sources
 RUN ["apt-get", "update", "--error-on=any"]
 # Vulkan loader and lavapipe render without a GPU.
 RUN ["apt-get", "install", "-y", "--no-install-recommends", "ca-certificates", "curl", "xz-utils", "pkg-config", "libc6-dev", "libwayland-dev", "libxkbcommon-dev", "libweston-13-dev", "weston", "libvulkan1", "mesa-vulkan-drivers"]
+# Node's runtime dependency beyond glibc and libstdc++.
+RUN ["apt-get", "install", "-y", "--no-install-recommends", "libatomic1"]
 # Checksums from https://nodejs.org/dist/v26.10.0/SHASUMS256.txt.
 RUN set -eu; \
     case "$TARGETARCH" in \
