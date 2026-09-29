@@ -7,7 +7,8 @@ Releases with SHA-256 checksums. Built packages include provenance attestations.
 
 `zig/TOOLCHAIN` pins the upstream compiler archives. `zig/fetch` downloads and
 verifies them from the unmodified mirror maintained by the `zig` workflow.
-Bundle creation and Linux Dawn builds use that mirror without upstream fallback.
+Bundle creation, Linux Dawn builds and ngtcp2 builds use that mirror without
+upstream fallback.
 
 The `zig-bundles` workflow adds a compiler-helper cache for Linux x86_64/aarch64,
 macOS aarch64, and Windows x86_64. Only the tiny public fixtures under `zig/`
@@ -34,6 +35,26 @@ aarch64, and Apple M1 on macOS.
 Linux uses the pinned Zig and its libc++; macOS uses the system libc++ and requires
 macOS 26+. Change the revision or recipe, validate the pull request, then merge
 to publish new archives. Existing release assets are never replaced.
+
+## ngtcp2 and BoringSSL
+
+`ngtcp2/SOURCES` pins ngtcp2 and BoringSSL by tag and commit; `ngtcp2/*.cmake`
+defines their build settings. The `ngtcp2` workflow builds static libraries for
+Linux x86_64/aarch64, macOS aarch64, Windows x86_64 MSVC, and Windows x86_64 GNU
+for local cross builds. Archives hold `ngtcp2`, `ngtcp2_crypto_boringssl`,
+`ssl` and `crypto` with matching headers and licenses. Minimum CPUs match Dawn's.
+
+BoringSSL's libssl needs the C++ runtime, so each target is compiled for the one
+its final link uses: the pinned Zig's libc++ on Linux and Windows GNU (rebuild
+when `zig/TOOLCHAIN` changes), the system libc++ on macOS (26+), and MSVC's on
+Windows. MSVC objects name no C runtime, so Zig links the release or debug one.
+`BUILDINFO.txt` lists the define and system libraries consumers need.
+
+Each target runs both projects' unit tests and links a smoke test with the
+pinned Zig, as Lizzie would: an in-memory QUIC connection to a certificate
+pinned by hash. Windows GNU is cross-compiled on Linux, so it runs neither. The
+ngtcp2 release lacks `reset_stream_at`, which Safari's WebTransport needs
+([ngtcp2#1097](https://github.com/ngtcp2/ngtcp2/pull/1097)).
 
 ## CI image
 

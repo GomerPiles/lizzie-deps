@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Usage: ngtcp2/smoke TARGET PACKAGE_DIR OUTPUT [--link-only]
+#
+# Compiles ngtcp2/smoke.c against an unpacked package with the pinned Zig on
+# PATH or in $ZIG, linked as Lizzie links it: Lizzie's target and CPU baseline,
+# the package's libraries and the system libraries its BUILDINFO.txt lists.
+# Then runs it, unless --link-only.
+set -euo pipefail
+
+target=$1 package=$2 output=$3 mode=${4:-}
+[[ -z "$mode" || "$mode" == --link-only ]] || { echo "Unknown option: $mode" >&2; exit 1; }
+[[ "$output" == */* ]] || output=./$output
+case "$target" in
+  x86_64-linux-gnu) flags=(-target x86_64-linux-gnu.2.28 -mcpu=x86_64_v3) ;;
+  aarch64-linux-gnu) flags=(-target aarch64-linux-gnu.2.28 -mcpu=generic+v8_2a) ;;
+  # The native target keeps Zig's macOS SDK discovery, as in Lizzie's builds.
+  aarch64-macos) flags=(-mcpu=apple_m1) ;;
+  x86_64-windows-msvc) flags=(-target x86_64-windows-msvc -mcpu=x86_64_v3) ;;
+  x86_64-windows-gnu) flags=(-target x86_64-windows-gnu -mcpu=x86_64_v3) ;;
+  *) echo "ngtcp2/smoke: unknown target $target" >&2; exit 1 ;;
+esac
+if [[ "$target" == *-msvc ]]; then prefix= suffix=.lib; else prefix=lib suffix=.a; fi
+for library in ngtcp2_crypto_boringssl ngtcp2 ssl crypto; do
+  flags+=("$package/lib/$prefix$library$suffix")
+done
+for library in $(sed -n 's/^link: //p' "$package/BUILDINFO.txt"); do
+  flags+=("-l$library")
+done
+
+# Zig warns at length while it first builds its libc++, so the compiler's
+# output is shown only when it fails.
+build() {
+  if ! "${ZIG:-zig}" cc "$1" -std=c11 -Wall -Wextra -Werror -DNGTCP2_STATICLIB \
+    -I "$package/include" -o "$2" "$(dirname "$0")/smoke.c" "${flags[@]}" > "$2.log" 2>&1; then
+    tail -n 100 "$2.log"
+    exit 1
+  fi
+  [[ "$mode" == --link-only ]] || "$2"
+}
+build -O2 "$output"
+# MSVC objects name no C runtime (/Zl), so a debug link, for which Zig picks
+# the debug runtime, must work too.
+[[ "$target" != *-msvc ]] || build -O0 "${output%.exe}-debug.exe"

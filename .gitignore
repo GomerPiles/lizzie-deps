@@ -1,4 +1,6 @@
-# Local builds follow the CI layout: r (recipe), d (Dawn source), b (build), o (output).
+# Local builds follow the CI layout: r (recipe), d (Dawn source), s (ngtcp2 and
+# BoringSSL sources), b (build), o (output).
 /d/
+/s/
 /b/
 /o/

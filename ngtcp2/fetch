@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Usage: ngtcp2/fetch DIR
+#
+# Fetches each source pinned in ngtcp2/SOURCES into DIR/NAME, with the
+# submodules it pins (ngtcp2's test framework) and without history, and checks
+# that its tag names the pinned commit.
+set -euo pipefail
+
+dir=$1
+sources=$(dirname "$0")/SOURCES
+mkdir -p "$dir"
+while read -r name tag commit url; do
+  [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { echo "ngtcp2/fetch: $name needs a full commit hash" >&2; exit 1; }
+  rm -rf "${dir:?}/$name"
+  git init -q "$dir/$name"
+  git -C "$dir/$name" fetch -q --depth 1 "$url" "refs/tags/$tag"
+  tagged=$(git -C "$dir/$name" rev-parse 'FETCH_HEAD^{commit}')
+  [[ "$tagged" == "$commit" ]] || { echo "ngtcp2/fetch: $name $tag is $tagged, not $commit" >&2; exit 1; }
+  git -C "$dir/$name" checkout -q "$commit"
+  git -C "$dir/$name" submodule -q update --init --recursive --depth 1
+  echo "ngtcp2/fetch: $name $tag $commit"
+done < <(grep -Ev '^(#|$)' "$sources")

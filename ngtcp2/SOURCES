@@ -1,0 +1,5 @@
+# Upstream sources of the ngtcp2 package. ngtcp2/fetch checks that each tag
+# still names its commit.
+# NAME TAG COMMIT REPOSITORY
+ngtcp2 v1.25.0 f9e9ff01ad2c8116bc09de4f644b0028a61486a6 https://github.com/ngtcp2/ngtcp2.git
+boringssl 0.20260929.0 427ec40cc8edc545253289232e885708c409e5ea https://boringssl.googlesource.com/boringssl
