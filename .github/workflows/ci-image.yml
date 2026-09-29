@@ -1,0 +1,110 @@
+name: ci-image
+
+# Pull requests build both architectures without publishing anything. A push to main
+# that changes the recipe, or a manual run on main, publishes one multi-architecture
+# image, ghcr.io/gomerpiles/lizzie-ci:<recipe commit>, with a provenance attestation.
+# Consumers pin its digest. Existing tags are never replaced.
+on:
+  pull_request:
+    paths:
+      - ci-image/**
+      - .github/workflows/ci-image.yml
+  push:
+    branches: [main]
+    paths:
+      - ci-image/**
+      - .github/workflows/ci-image.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-image-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PUBLISH: ${{ github.event_name != 'pull_request' }}
+  IMAGE: ghcr.io/gomerpiles/lizzie-ci
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    # Ubuntu's snapshot service is sometimes very slow; image builds are rare.
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          docker build --platform "linux/$ARCH" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --tag "$IMAGE:${GITHUB_SHA:0:7}-$ARCH" --file ci-image/Containerfile ci-image
+
+      - name: Push architecture image
+        if: env.PUBLISH == 'true'
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]] || { echo "Publish only from main."; exit 1; }
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          if docker manifest inspect "$IMAGE:${GITHUB_SHA:0:7}" >/dev/null 2>&1; then
+            echo "$IMAGE:${GITHUB_SHA:0:7} already exists; images are never replaced."; exit 1
+          fi
+          docker push "$IMAGE:${GITHUB_SHA:0:7}-$ARCH"
+
+  publish:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - id: manifest
+        name: Publish multi-architecture image
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$IMAGE:${GITHUB_SHA:0:7}"
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker buildx imagetools create --tag "$tag" "$tag-amd64" "$tag-arm64"
+          digest=$(docker buildx imagetools inspect "$tag" --format '{{json .Manifest}}' | jq -r .digest)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          {
+            echo "Published \`$tag\`."
+            echo
+            echo "Pin \`$IMAGE@$digest\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.manifest.outputs.digest }}
+          push-to-registry: true

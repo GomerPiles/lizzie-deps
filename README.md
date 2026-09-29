@@ -34,3 +34,10 @@ aarch64, and Apple M1 on macOS.
 Linux uses the pinned Zig and its libc++; macOS uses the system libc++ and requires
 macOS 26+. Change the revision or recipe, validate the pull request, then merge
 to publish new archives. Existing release assets are never replaced.
+
+## CI image
+
+`ci-image/` defines a Linux image with Weston 13, lavapipe, Node, and Playwright's
+headless Chromium on a pinned Ubuntu 24.04 snapshot. The `ci-image` workflow
+publishes it for amd64 and arm64 as `ghcr.io/gomerpiles/lizzie-ci:<commit>` with a
+provenance attestation. Pin its digest. Existing tags are never replaced.
