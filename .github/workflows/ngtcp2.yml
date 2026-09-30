@@ -53,8 +53,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ngtcp2=$(awk '$1 == "ngtcp2" { sub(/^v/, "", $2); print $2 }' ngtcp2/SOURCES)
-          boringssl=$(awk '$1 == "boringssl" { print $2 }' ngtcp2/SOURCES)
+          # Named as package.cmake names archives.
+          label() {
+            awk -v name="$1" '$1 == name { sub(/^v/, "", $2); print ($2 == "-" ? substr($3, 1, 12) : $2) }' ngtcp2/SOURCES
+          }
+          ngtcp2=$(label ngtcp2)
+          boringssl=$(label boringssl)
           [[ -n "$ngtcp2" && -n "$boringssl" ]] || { echo "ngtcp2/SOURCES must pin ngtcp2 and boringssl"; exit 1; }
           echo "tag=ngtcp2-$ngtcp2-boringssl-$boringssl-${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
 
@@ -232,7 +236,8 @@ jobs:
                 https://github.com/*) link=${url%.git}/tree/$commit ;;
                 *) link=$url/+/$commit ;;
               esac
-              echo "- $name \`$tag\`, commit [\`$commit\`]($link)"
+              [[ "$tag" == - ]] && pin="untagged" || pin="\`$tag\`"
+              echo "- $name $pin, commit [\`$commit\`]($link)"
             done < <(grep -Ev '^(#|$)' ngtcp2/SOURCES)
             echo
             echo "Built by recipe [\`$GITHUB_SHA\`](https://github.com/$GH_REPO/tree/$GITHUB_SHA)"

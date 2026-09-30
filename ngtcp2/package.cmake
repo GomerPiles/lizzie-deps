@@ -1,6 +1,6 @@
 # Packages the libraries ngtcp2/build produced as
 # <OUTPUT_DIR>/ngtcp2-<version>-boringssl-<tag>-<TARGET>.tar.gz plus a matching
-# .sha256 file. Run in script mode:
+# .sha256 file. An untagged pin is named by its commit's first 12 hex digits. Run in script mode:
 #
 #   cmake -D SOURCE_DIR=s -D BINARY_DIR=b -D TARGET=... -D RECIPE_COMMIT=...
 #         -D OUTPUT_DIR=o -P ngtcp2/package.cmake
@@ -27,6 +27,11 @@ foreach(pin IN LISTS pins)
     list(GET fields 1 tag_${pin_name})
     list(GET fields 2 commit_${pin_name})
     list(GET fields 3 url_${pin_name})
+    if(tag_${pin_name} STREQUAL "-")
+        string(SUBSTRING "${commit_${pin_name}}" 0 12 label_${pin_name})
+    else()
+        string(REGEX REPLACE "^v" "" label_${pin_name} "${tag_${pin_name}}")
+    endif()
     execute_process(
         COMMAND git -C "${SOURCE_DIR}/${pin_name}" rev-parse HEAD
         OUTPUT_VARIABLE checkout OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -36,8 +41,7 @@ foreach(pin IN LISTS pins)
     endif()
 endforeach()
 
-string(REGEX REPLACE "^v" "" ngtcp2_version "${tag_ngtcp2}")
-set(name "ngtcp2-${ngtcp2_version}-boringssl-${tag_boringssl}-${TARGET}")
+set(name "ngtcp2-${label_ngtcp2}-boringssl-${label_boringssl}-${TARGET}")
 set(stage "${OUTPUT_DIR}/${name}")
 file(REMOVE_RECURSE "${stage}")
 file(REMOVE "${OUTPUT_DIR}/${name}.tar.gz" "${OUTPUT_DIR}/${name}.tar.gz.sha256")
