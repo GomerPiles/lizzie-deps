@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Usage: ngtcp2/build TARGET
+#
+# Builds BoringSSL, then ngtcp2 against it, from the sources ngtcp2/fetch put
+# in s/ into b/, with the settings in ngtcp2/TARGET.cmake. Runs both projects'
+# unit tests unless that file turns BUILD_TESTING off. Run it from the
+# directory that holds s/.
+set -euo pipefail
+
+target=$1
+cache=$(cd "$(dirname "$0")" && pwd)/$target.cmake
+[[ -f "$cache" ]] || { echo "ngtcp2/build: no $cache" >&2; exit 1; }
+# Git Bash gives POSIX paths that native Windows tools cannot open.
+root=$(pwd -W 2> /dev/null || pwd)
+
+cmake -S s/boringssl -B b/boringssl -G Ninja -C "$cache"
+testing=$(sed -n 's/^BUILD_TESTING:BOOL=//p' b/boringssl/CMakeCache.txt)
+if [[ "$testing" == ON ]]; then
+  cmake --build b/boringssl --target crypto ssl crypto_test ssl_test urandom_test
+  # crypto_test reads its test vectors relative to the source root.
+  (cd s/boringssl && ../../b/boringssl/crypto_test && ../../b/boringssl/urandom_test &&
+    ../../b/boringssl/ssl_test)
+else
+  cmake --build b/boringssl --target crypto ssl
+fi
+
+library() {
+  local path
+  for path in "b/boringssl/lib$1.a" "b/boringssl/$1.lib"; do
+    [[ -f "$path" ]] && { echo "$root/$path"; return; }
+  done
+  echo "ngtcp2/build: BoringSSL built no $1 library" >&2
+  exit 1
+}
+ssl=$(library ssl)
+crypto=$(library crypto)
+
+cmake -S s/ngtcp2 -B b/ngtcp2 -G Ninja -C "$cache" \
+  -D "BORINGSSL_INCLUDE_DIR=$root/s/boringssl/include" \
+  -D "BORINGSSL_LIBRARIES=$ssl;$crypto"
+if [[ "$testing" == ON ]]; then
+  cmake --build b/ngtcp2 --target ngtcp2_static ngtcp2_crypto_boringssl_static main
+  b/ngtcp2/tests/main
+else
+  cmake --build b/ngtcp2 --target ngtcp2_static ngtcp2_crypto_boringssl_static
+fi

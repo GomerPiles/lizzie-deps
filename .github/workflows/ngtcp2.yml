@@ -1,0 +1,256 @@
+name: ngtcp2
+
+# Builds ngtcp2 with BoringSSL as its TLS stack. Pull requests build and test
+# every target without publishing anything. A push to main that changes the
+# recipe, or a manual run on main, builds every target and publishes one
+# immutable release for that recipe commit. No Actions artifacts are stored:
+# binaries go straight to the release.
+on:
+  pull_request:
+    paths:
+      - ngtcp2/**
+      - zig/TOOLCHAIN
+      - zig/fetch
+      - .github/workflows/ngtcp2.yml
+  push:
+    branches: [main]
+    paths:
+      - ngtcp2/**
+      - zig/TOOLCHAIN
+      - zig/fetch
+      - .github/workflows/ngtcp2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ngtcp2-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PUBLISH: ${{ github.event_name != 'pull_request' }}
+  GH_REPO: ${{ github.repository }}
+  # BoringSSL's Windows assembly needs NASM; this is the version BoringSSL uses.
+  # Windows runs its win64 build; the Windows GNU cross build compiles its source.
+  NASM_VERSION: '3.01'
+  NASM_WIN64_SHA256: e0ba5157007abc7b1a65118a96657a961ddf55f7e3f632ee035366dfce039ca4
+  NASM_SOURCE_SHA256: b7324cbe86e767b65f26f467ed8b12ad80e124e3ccb89076855c98e43a9eddd4
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.pin.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - id: pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Named as package.cmake names archives.
+          label() {
+            awk -v name="$1" '$1 == name { sub(/^v/, "", $2); print ($2 == "-" ? substr($3, 1, 12) : $2) }' ngtcp2/SOURCES
+          }
+          ngtcp2=$(label ngtcp2)
+          boringssl=$(label boringssl)
+          [[ -n "$ngtcp2" && -n "$boringssl" ]] || { echo "ngtcp2/SOURCES must pin ngtcp2 and boringssl"; exit 1; }
+          echo "tag=ngtcp2-$ngtcp2-boringssl-$boringssl-${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+      - name: Create draft release
+        if: env.PUBLISH == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.pin.outputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]] || { echo "Publish only from main."; exit 1; }
+          if draft=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null); then
+            [[ "$draft" == true ]] || { echo "$TAG is already published."; exit 1; }
+          else
+            gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "$TAG" \
+              --notes "Build in progress."
+          fi
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-macos
+            runner: macos-26
+            zig: aarch64-macos
+          - target: x86_64-linux-gnu
+            runner: ubuntu-24.04
+            zig: x86_64-linux
+          - target: aarch64-linux-gnu
+            runner: ubuntu-24.04-arm
+            zig: aarch64-linux
+          - target: x86_64-windows-msvc
+            runner: windows-2025
+            zig: x86_64-windows
+          # Cross-compiled, so the smoke test links but cannot run.
+          - target: x86_64-windows-gnu
+            runner: ubuntu-24.04
+            zig: x86_64-linux
+            smoke: --link-only
+    name: build (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    env:
+      TAG: ${{ needs.prepare.outputs.tag }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # Git Bash rejects CRLF scripts, and the packaged sources keep upstream's
+      # LF endings.
+      - name: Keep LF line endings (Windows)
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: r
+          persist-credentials: false
+
+      - name: Install Ninja (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build
+
+      - name: Install Ninja (macOS)
+        if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: command -v ninja || brew install ninja
+
+      # vcvars64 puts MSVC, and the CMake and Ninja that ship with it, on PATH.
+      - name: Enter the MSVC environment (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
+            -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" > nul && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') { "$($Matches[1])=$($Matches[2])" >> $env:GITHUB_ENV }
+          }
+
+      - name: Install NASM (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          set -euo pipefail
+          name=nasm-$NASM_VERSION-win64.zip
+          curl -fsSL --retry 2 -o "$name" \
+            "https://www.nasm.us/pub/nasm/releasebuilds/$NASM_VERSION/win64/$name"
+          echo "$NASM_WIN64_SHA256  $name" | sha256sum -c -
+          unzip -q "$name"
+          cygpath -w "$PWD/nasm-$NASM_VERSION" >> "$GITHUB_PATH"
+
+      # The runner's C compiler builds it: the pinned Zig rejects NASM's __DATE__.
+      - name: Build NASM (Windows GNU)
+        if: matrix.target == 'x86_64-windows-gnu'
+        run: |
+          set -euo pipefail
+          name=nasm-$NASM_VERSION.tar.xz
+          curl -fsSL --retry 2 -o "$name" \
+            "https://www.nasm.us/pub/nasm/releasebuilds/$NASM_VERSION/$name"
+          echo "$NASM_SOURCE_SHA256  $name" | sha256sum -c -
+          tar -xJf "$name"
+          (cd "nasm-$NASM_VERSION" && ./configure -q && make -s -j"$(nproc)" nasm)
+          echo "$PWD/nasm-$NASM_VERSION" >> "$GITHUB_PATH"
+
+      # Linux and Windows GNU builds compile with the pinned Zig, and every
+      # target links its smoke test with it, as Lizzie does.
+      - name: Install Zig
+        run: |
+          set -euo pipefail
+          r/zig/fetch ${{ matrix.zig }} z
+          if [[ "${{ runner.os }}" == Windows ]]; then
+            unzip -q z/*.zip -d z && mv z/zig-*/ zig
+          else
+            mkdir zig && tar -xJf z/*.tar.xz -C zig --strip-components 1
+          fi
+          echo "ZIG=$PWD/zig/zig" >> "$GITHUB_ENV"
+
+      - name: Fetch sources
+        run: r/ngtcp2/fetch s
+
+      - name: Build and test
+        run: r/ngtcp2/build ${{ matrix.target }}
+
+      - name: Package
+        run: >
+          cmake -D SOURCE_DIR=s -D BINARY_DIR=b -D TARGET=${{ matrix.target }}
+          -D RECIPE_COMMIT=${{ github.sha }} -D OUTPUT_DIR=o -P r/ngtcp2/package.cmake
+
+      - name: Smoke test
+        run: r/ngtcp2/smoke ${{ matrix.target }} o/ngtcp2-*-${{ matrix.target }} b/smoke.exe ${{ matrix.smoke }}
+
+      - name: Attest
+        if: env.PUBLISH == 'true'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: o/*.tar.gz
+
+      - name: Upload to draft release
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" o/*.tar.gz o/*.tar.gz.sha256 --clobber
+
+  publish:
+    needs: [prepare, build]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Write notes and publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --pattern '*.sha256' --dir sums
+          {
+            while read -r name tag commit url; do
+              case "$url" in
+                https://github.com/*) link=${url%.git}/tree/$commit ;;
+                *) link=$url/+/$commit ;;
+              esac
+              [[ "$tag" == - ]] && pin="untagged" || pin="\`$tag\`"
+              echo "- $name $pin, commit [\`$commit\`]($link)"
+            done < <(grep -Ev '^(#|$)' ngtcp2/SOURCES)
+            echo
+            echo "Built by recipe [\`$GITHUB_SHA\`](https://github.com/$GH_REPO/tree/$GITHUB_SHA)"
+            echo "in [run $GITHUB_RUN_ID](https://github.com/$GH_REPO/actions/runs/$GITHUB_RUN_ID)."
+            echo
+            echo "| Archive | Bytes | SHA-256 |"
+            echo "| --- | --- | --- |"
+            gh release view "$TAG" --json assets \
+              --jq '.assets[] | select(.name | endswith(".tar.gz")) | "\(.name) \(.size)"' |
+              sort | while read -r name size; do
+                echo "| \`$name\` | $size | \`$(cut -d' ' -f1 "sums/$name.sha256")\` |"
+              done
+            echo
+            echo "Verify provenance with \`gh attestation verify <archive> --repo $GH_REPO\`."
+          } > notes.md
+          gh release edit "$TAG" --draft=false --notes-file notes.md
