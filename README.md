@@ -44,8 +44,9 @@ Linux x86_64/aarch64, macOS aarch64, Windows x86_64 MSVC, and Windows x86_64 GNU
 for local cross builds. Archives hold `ngtcp2`, `ngtcp2_crypto_boringssl`,
 `ssl` and `crypto` with matching headers and licenses. Minimum CPUs match Dawn's.
 
-BoringSSL's libssl needs the C++ runtime, so each target is compiled for the one
-its final link uses: the pinned Zig's libc++ on Linux and Windows GNU (rebuild
+BoringSSL needs part of the C++ runtime (`operator delete` and libc++ internals,
+with exceptions and RTTI off outside MSVC), so each target is compiled for the
+one its final link uses: the pinned Zig's libc++ on Linux and Windows GNU (rebuild
 when `zig/TOOLCHAIN` changes), the system libc++ on macOS (26+), and MSVC's on
 Windows. MSVC objects name no C runtime, so Zig links the release or debug one.
 `BUILDINFO.txt` lists the define and system libraries consumers need.

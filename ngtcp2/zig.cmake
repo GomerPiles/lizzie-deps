@@ -8,8 +8,11 @@ include("${CMAKE_CURRENT_LIST_DIR}/common.cmake")
 foreach(lang C CXX ASM)
     set(CMAKE_${lang}_COMPILER_TARGET "${LIZZIE_ZIG_TARGET}" CACHE STRING "")
 endforeach()
+# BoringSSL compiles libcrypto without exceptions or RTTI, and libssl needs
+# neither, which leaves it only operator delete and a few libc++ internals.
+set(CMAKE_C_FLAGS "-mcpu=${LIZZIE_ZIG_CPU}" CACHE STRING "")
+set(CMAKE_CXX_FLAGS "-mcpu=${LIZZIE_ZIG_CPU} -fno-exceptions -fno-rtti" CACHE STRING "")
 foreach(lang C CXX)
-    set(CMAKE_${lang}_FLAGS "-mcpu=${LIZZIE_ZIG_CPU}" CACHE STRING "")
     # Unlike clang and GCC, `zig cc` emits debug info unless told otherwise, and
     # BoringSSL appends -ggdb to CMAKE_<LANG>_FLAGS. Release flags come last.
     set(CMAKE_${lang}_FLAGS_RELEASE "-O3 -DNDEBUG -g0" CACHE STRING "")

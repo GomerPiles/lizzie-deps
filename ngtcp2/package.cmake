@@ -95,7 +95,8 @@ string(REGEX REPLACE "\n \\* ?" "\n" pcg "${pcg}")
 file(WRITE "${stage}/notices/pcg/NOTICE" "${pcg}\n")
 
 # Record the provenance, effective build settings and link requirements.
-load_cache("${BINARY_DIR}/boringssl" READ_WITH_PREFIX cache_ LIZZIE_LINK_LIBRARIES)
+load_cache("${BINARY_DIR}/boringssl" READ_WITH_PREFIX cache_
+    LIZZIE_LINK_LIBRARIES CMAKE_ASM_NASM_COMPILER)
 set(cmake_settings "CMAKE_BUILD_TYPE|CMAKE_OSX_(ARCHITECTURES|DEPLOYMENT_TARGET)|CMAKE_MSVC_RUNTIME_LIBRARY|CMAKE_EXE_LINKER_FLAGS:|CMAKE_(C|CXX|ASM)_COMPILER_TARGET|CMAKE_(C|CXX|ASM)_FLAGS(_RELEASE)?:|CMAKE_GENERATOR:")
 set(boringssl_settings "BUILD_SHARED_LIBS|BUILD_TESTING|OPENSSL_")
 set(ngtcp2_settings "BUILD_TESTING|ENABLE_")
@@ -109,6 +110,13 @@ endforeach()
 file(GLOB compiler_files "${BINARY_DIR}/boringssl/CMakeFiles/*/CMakeCXXCompiler.cmake")
 list(GET compiler_files 0 compiler_file)
 file(STRINGS "${compiler_file}" compiler REGEX "^set\\(CMAKE_CXX_COMPILER_(ID|VERSION) ")
+if(cache_CMAKE_ASM_NASM_COMPILER)
+    execute_process(
+        COMMAND "${cache_CMAKE_ASM_NASM_COMPILER}" -v
+        OUTPUT_VARIABLE nasm COMMAND_ERROR_IS_FATAL ANY)
+    string(REGEX MATCH "NASM version [^ \n]+" nasm "${nasm}")
+    list(APPEND compiler "${nasm}")
+endif()
 string(JOIN "\n" settings ${settings})
 string(JOIN "\n" compiler ${compiler})
 file(WRITE "${stage}/BUILDINFO.txt"

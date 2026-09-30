@@ -32,8 +32,10 @@ env:
   PUBLISH: ${{ github.event_name != 'pull_request' }}
   GH_REPO: ${{ github.repository }}
   # BoringSSL's Windows assembly needs NASM; this is the version BoringSSL uses.
+  # Windows runs its win64 build; the Windows GNU cross build compiles its source.
   NASM_VERSION: '3.01'
-  NASM_SHA256: e0ba5157007abc7b1a65118a96657a961ddf55f7e3f632ee035366dfce039ca4
+  NASM_WIN64_SHA256: e0ba5157007abc7b1a65118a96657a961ddf55f7e3f632ee035366dfce039ca4
+  NASM_SOURCE_SHA256: b7324cbe86e767b65f26f467ed8b12ad80e124e3ccb89076855c98e43a9eddd4
 
 jobs:
   prepare:
@@ -120,9 +122,9 @@ jobs:
           path: r
           persist-credentials: false
 
-      - name: Install Ninja and NASM (Linux)
+      - name: Install Ninja (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build nasm
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build
 
       - name: Install Ninja (macOS)
         if: runner.os == 'macOS'
@@ -149,9 +151,22 @@ jobs:
           name=nasm-$NASM_VERSION-win64.zip
           curl -fsSL --retry 2 -o "$name" \
             "https://www.nasm.us/pub/nasm/releasebuilds/$NASM_VERSION/win64/$name"
-          echo "$NASM_SHA256  $name" | sha256sum -c -
+          echo "$NASM_WIN64_SHA256  $name" | sha256sum -c -
           unzip -q "$name"
           cygpath -w "$PWD/nasm-$NASM_VERSION" >> "$GITHUB_PATH"
+
+      # The runner's C compiler builds it: the pinned Zig rejects NASM's __DATE__.
+      - name: Build NASM (Windows GNU)
+        if: matrix.target == 'x86_64-windows-gnu'
+        run: |
+          set -euo pipefail
+          name=nasm-$NASM_VERSION.tar.xz
+          curl -fsSL --retry 2 -o "$name" \
+            "https://www.nasm.us/pub/nasm/releasebuilds/$NASM_VERSION/$name"
+          echo "$NASM_SOURCE_SHA256  $name" | sha256sum -c -
+          tar -xJf "$name"
+          (cd "nasm-$NASM_VERSION" && ./configure -q && make -s -j"$(nproc)" nasm)
+          echo "$PWD/nasm-$NASM_VERSION" >> "$GITHUB_PATH"
 
       # Linux and Windows GNU builds compile with the pinned Zig, and every
       # target links its smoke test with it, as Lizzie does.
