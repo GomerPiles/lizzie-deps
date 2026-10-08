@@ -175,6 +175,16 @@ const Recipe = struct {
         try self.write(try self.path(&.{ source, "lizzie", "lizzie_crashpad.cc" }), @embedFile("lizzie_crashpad.cc"));
         var gn_args: []const u8 = "is_debug=false ";
         if (target.linux()) {
+            // Zig's explicit glibc target deliberately excludes host headers.
+            // Select the already pinned embedded zlib, as the Windows build does.
+            const zlib_config = try self.path(&.{ source, "third_party/zlib/BUILD.gn" });
+            const original = try self.read(zlib_config);
+            const needle = "!crashpad_is_win && !crashpad_is_fuchsia";
+            const replacement = needle ++ " && !crashpad_is_linux";
+            if (std.mem.indexOf(u8, original, replacement) == null) {
+                const index = std.mem.indexOf(u8, original, needle) orelse return error.UpstreamZlibSelectionChanged;
+                try self.write(zlib_config, try self.format("{s}{s}{s}", .{ original[0..index], replacement, original[index + needle.len ..] }));
+            }
             const shim = try self.path(&.{ out, "zig-toolchain" });
             const bin = try self.path(&.{ shim, "bin" });
             try self.mkdir(bin);
@@ -236,10 +246,10 @@ const Recipe = struct {
         try self.copy(try self.path(&.{ source, "third_party/mini_chromium/mini_chromium/LICENSE" }), try self.path(&.{ stage, "notices/mini_chromium.LICENSE" }));
         try self.copy(try self.path(&.{ source, "third_party/mini_chromium/mini_chromium/base/third_party/icu/LICENSE" }), try self.path(&.{ stage, "notices/icu.LICENSE" }));
         if (target.linux()) try self.copy(try self.path(&.{ source, "third_party/lss/lss/LICENSE" }), try self.path(&.{ stage, "notices/lss.LICENSE" }));
-        if (target.windows()) try self.copy(try self.path(&.{ source, "third_party/zlib/zlib/LICENSE" }), try self.path(&.{ stage, "notices/zlib.LICENSE" }));
+        if (target.windows() or target.linux()) try self.copy(try self.path(&.{ source, "third_party/zlib/zlib/LICENSE" }), try self.path(&.{ stage, "notices/zlib.LICENSE" }));
         try self.write(try self.path(&.{ stage, "BUILDINFO.txt" }), try self.format(
             "target: {s}\ncompiler-target: {s}\nrecipe: {s}\ncpu: {s}\nlink: {s}\nbridge: C ABI; max 16 attachments, 64 annotations\nuploads: disabled by bridge\nLinux compiler shim: pinned Zig cc/c++/ar, explicit target and CPU, -g0\nLinux HTTP: socket, no TLS (uploads out of scope)\n\n{s}\n{s}\nGN args:\n{s}\nCompiler:\n{s}\nTools:\n{s}\n",
-            .{ @tagName(target), target.triple(), commit, target.cpu(), if (target.windows()) "import library; deploy bin/lizzie_crashpad.dll" else if (target.linux()) "c++ dl pthread rt z" else "c++.1 bsm z; Foundation CoreFoundation Security", @embedFile("SOURCES"), @embedFile("GN"), try self.read(try self.path(&.{ out, "args.gn" })), try self.read(try self.path(&.{ out, "COMPILER.txt" })), try self.read(try self.path(&.{ out, "TOOLS.txt" })) },
+            .{ @tagName(target), target.triple(), commit, target.cpu(), if (target.windows()) "import library; deploy bin/lizzie_crashpad.dll" else if (target.linux()) "c++ dl pthread rt; embedded pinned zlib" else "c++.1 bsm z; Foundation CoreFoundation Security", @embedFile("SOURCES"), @embedFile("GN"), try self.read(try self.path(&.{ out, "args.gn" })), try self.read(try self.path(&.{ out, "COMPILER.txt" })), try self.read(try self.path(&.{ out, "TOOLS.txt" })) },
         ));
         if (target.linux()) try self.copy(try self.path(&.{ out, "RUNTIME.txt" }), try self.path(&.{ stage, "RUNTIME.txt" }));
         const archive = try self.path(&.{ output, try self.format("{s}.tar.gz", .{name}) });
@@ -283,7 +293,7 @@ const Recipe = struct {
         }
     }
     fn inspect(self: Recipe, package_root: []const u8, reports: []const u8, target: Target) !void {
-        const pending = try self.path(&.{ reports, "database/pending" });
+        const pending = try self.path(&.{ reports, if (target.windows()) "database/reports" else "database/pending" });
         var dir = try Io.Dir.cwd().openDir(self.io, pending, .{ .iterate = true });
         defer dir.close(self.io);
         var iterator = dir.iterate();

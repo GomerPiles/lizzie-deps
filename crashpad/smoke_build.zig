@@ -28,7 +28,7 @@ pub fn build(b: *std.Build) void {
         for ([_][]const u8{ "Foundation", "CoreFoundation", "Security" }) |framework| module.linkFramework(framework, .{});
     } else {
         module.link_libcpp = true;
-        for ([_][]const u8{ "dl", "pthread", "rt", "z" }) |library| module.linkSystemLibrary(library, .{});
+        for ([_][]const u8{ "dl", "pthread", "rt" }) |library| module.linkSystemLibrary(library, .{});
     }
     b.installArtifact(exe);
 }

@@ -104,7 +104,7 @@ jobs:
           persist-credentials: false
       - name: Install tools (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build cmake zlib1g-dev
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build cmake
       - name: Install Ninja (macOS)
         if: runner.os == 'macOS'
         env:

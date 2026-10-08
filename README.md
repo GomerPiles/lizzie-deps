@@ -71,6 +71,8 @@ CPU baselines as Dawn. macOS uses AppleClang, system libc++, Apple M1 and macOS
 actual compiler, Ninja and GN versions, sources, target and flags in `BUILDINFO.txt`.
 Linux runtime dependencies are also recorded and checked for unexpected dynamic
 C++/curl libraries. Rebuild Linux packages whenever the Zig pin changes.
+Linux embeds the pinned zlib source, keeping host headers and libraries out of
+Zig's glibc 2.28 build; macOS uses system zlib and Windows also embeds zlib.
 
 Packages expose only `include/lizzie_crashpad.h`: a small C ABI for registration,
 bounded annotations, prepared attachment paths, on-demand capture and releasing
@@ -96,7 +98,7 @@ checks, separate from game CI. PRs publish nothing; main publishes checksummed,
 attested archives only after every target passes.
 
 For local development, set `ZIG` to the pinned compiler and put Ninja, CMake,
-Python 3, Git and curl on PATH. Linux also needs zlib development files; Windows
+Python 3, Git and curl on PATH. Windows
 needs Visual Studio C++ tools and a Windows SDK. Use fresh output and smoke
 directories:
 
@@ -113,6 +115,8 @@ The Windows build forwards GN's extra compiler flags into the pinned
 mini_chromium x64 MSVC invocation, which otherwise ignores them. This narrowly
 checked recipe patch ensures `/MT` and `/arch:AVX2` reach every translation unit;
 remove it when upstream forwards those args itself.
+Linux also narrowly patches upstream's zlib selection to use its existing
+embedded build; remove that patch when GN exposes this as a supported build arg.
 
 ## CI image
 
