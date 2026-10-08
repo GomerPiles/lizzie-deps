@@ -126,10 +126,11 @@ jobs:
           r/zig/fetch ${{ matrix.zig }} z
           if [[ "${{ runner.os }}" == Windows ]]; then
             unzip -q z/*.zip -d z && mv z/zig-*/ zig
+            echo "ZIG=$(cygpath -w "$PWD/zig/zig.exe")" >> "$GITHUB_ENV"
           else
             mkdir zig && tar -xJf z/*.tar.xz -C zig --strip-components 1
+            echo "ZIG=$PWD/zig/zig" >> "$GITHUB_ENV"
           fi
-          echo "ZIG=$PWD/zig/zig" >> "$GITHUB_ENV"
       - name: Compile recipe and check formatting
         run: |
           set -euo pipefail

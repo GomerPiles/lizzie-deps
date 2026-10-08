@@ -112,6 +112,7 @@ const Recipe = struct {
             const url = words.next() orelse return error.InvalidSourcePin;
             const destination = try self.path(&.{ root, words.next() orelse return error.InvalidSourcePin });
             if (revision.len != 40) return error.InvalidSourcePin;
+            try self.mkdir(destination);
             try self.run(&.{ "git", "init", "-q", destination }, null);
             try self.run(&.{ "git", "-C", destination, "-c", "core.autocrlf=false", "fetch", "--depth=1", url, revision }, null);
             try self.run(&.{ "git", "-C", destination, "-c", "core.autocrlf=false", "checkout", "--detach", "FETCH_HEAD" }, null);
