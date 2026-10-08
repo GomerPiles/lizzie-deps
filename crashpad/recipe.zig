@@ -222,8 +222,13 @@ const Recipe = struct {
         const gn = try self.path(&.{ tools_root, if (target.windows()) "gn.exe" else "gn" });
         try self.run(&.{ gn, "gen", out, "--root-target=//lizzie:package", "--fail-on-unused-args" }, source);
         try self.run(&.{ "ninja", "-C", out, "lizzie:lizzie_crashpad", "handler:crashpad_handler", "tools:crashpad_database_util", "tools:dump_minidump_annotations" }, source);
-        const compiler_version = try self.capture(&.{ if (target.linux()) self.zig() else if (target.windows()) "cl.exe" else "clang++", if (target.linux()) "version" else if (target.windows()) "/?" else "--version" }, null);
-        try self.write(try self.path(&.{ out, "COMPILER.txt" }), compiler_version);
+        // MSVC writes its version banner to stderr and its help to stdout.
+        const compiler_version = try std.process.run(self.allocator, self.io, .{
+            .argv = &.{ if (target.linux()) self.zig() else if (target.windows()) "cl.exe" else "clang++", if (target.linux()) "version" else if (target.windows()) "/?" else "--version" },
+            .environ_map = self.environment,
+        });
+        if (compiler_version.term != .exited or compiler_version.term.exited != 0) return error.CommandFailed;
+        try self.write(try self.path(&.{ out, "COMPILER.txt" }), try self.format("{s}{s}", .{ compiler_version.stdout, compiler_version.stderr }));
         try self.write(try self.path(&.{ out, "TOOLS.txt" }), try self.format("GN: {s}Ninja: {s}", .{ try self.capture(&.{ gn, "--version" }, null), try self.capture(&.{ "ninja", "--version" }, null) }));
         try self.write(try self.path(&.{ out, "TARGET" }), @tagName(target));
         if (target.linux()) {
@@ -254,6 +259,8 @@ const Recipe = struct {
         try self.copy(try self.path(&.{ source, "third_party/mini_chromium/mini_chromium/base/third_party/icu/LICENSE" }), try self.path(&.{ stage, "notices/icu.LICENSE" }));
         if (target.linux()) try self.copy(try self.path(&.{ source, "third_party/lss/lss/LICENSE" }), try self.path(&.{ stage, "notices/lss.LICENSE" }));
         if (target.windows() or target.linux()) try self.copy(try self.path(&.{ source, "third_party/zlib/zlib/LICENSE" }), try self.path(&.{ stage, "notices/zlib.LICENSE" }));
+        if (target.windows()) try self.copy(try self.path(&.{ source, "third_party/getopt/LICENSE" }), try self.path(&.{ stage, "notices/getopt.LICENSE" }));
+        if (target == .@"aarch64-macos") try self.copy(try self.path(&.{ source, "third_party/xnu/APPLE_LICENSE" }), try self.path(&.{ stage, "notices/xnu.LICENSE" }));
         try self.write(try self.path(&.{ stage, "BUILDINFO.txt" }), try self.format(
             "target: {s}\ncompiler-target: {s}\nrecipe: {s}\ncpu: {s}\nlink: {s}\nbridge: C ABI; max 16 attachments, 64 annotations\nuploads: disabled by bridge\nLinux compiler shim: pinned Zig cc/c++/ar, explicit target and CPU, -g0\nLinux HTTP: socket, no TLS (uploads out of scope)\n\n{s}\n{s}\nGN args:\n{s}\nCompiler:\n{s}\nTools:\n{s}\n",
             .{ @tagName(target), target.triple(), commit, target.cpu(), if (target.windows()) "import library; deploy bin/lizzie_crashpad.dll" else if (target.linux()) "c++ dl pthread rt; embedded pinned zlib" else "c++.1 bsm z; Foundation CoreFoundation Security", @embedFile("SOURCES"), @embedFile("GN"), try self.read(try self.path(&.{ out, "args.gn" })), try self.read(try self.path(&.{ out, "COMPILER.txt" })), try self.read(try self.path(&.{ out, "TOOLS.txt" })) },
