@@ -185,6 +185,13 @@ const Recipe = struct {
                 const index = std.mem.indexOf(u8, original, needle) orelse return error.UpstreamZlibSelectionChanged;
                 try self.write(zlib_config, try self.format("{s}{s}{s}", .{ original[0..index], replacement, original[index + needle.len ..] }));
             }
+            const selected = try self.read(zlib_config);
+            const warning_needle = "if (crashpad_is_fuchsia) {\n      # Fuchsia build's default warnings";
+            const warning_replacement = "if (crashpad_is_fuchsia || crashpad_is_linux) {\n      # Fuchsia build's default warnings";
+            if (std.mem.indexOf(u8, selected, warning_replacement) == null) {
+                const index = std.mem.indexOf(u8, selected, warning_needle) orelse return error.UpstreamZlibWarningsChanged;
+                try self.write(zlib_config, try self.format("{s}{s}{s}", .{ selected[0..index], warning_replacement, selected[index + warning_needle.len ..] }));
+            }
             const shim = try self.path(&.{ out, "zig-toolchain" });
             const bin = try self.path(&.{ shim, "bin" });
             try self.mkdir(bin);

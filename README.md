@@ -116,7 +116,8 @@ mini_chromium x64 MSVC invocation, which otherwise ignores them. This narrowly
 checked recipe patch ensures `/MT` and `/arch:AVX2` reach every translation unit;
 remove it when upstream forwards those args itself.
 Linux also narrowly patches upstream's zlib selection to use its existing
-embedded build; remove that patch when GN exposes this as a supported build arg.
+embedded build and applies that build's existing warning settings on Linux;
+remove those patches when GN supports this configuration directly.
 
 ## CI image
 
