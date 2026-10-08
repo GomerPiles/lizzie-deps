@@ -1,0 +1,6 @@
+# host SHA256; GN revision from Crashpad's DEPS, immutable CIPD download
+revision 5e19d2fb166fbd4f6f32147fbb2f497091a54ad8
+mac-arm64 bd485a3494c85341a59241e8307cdcbc1d244b58478ad331ede96449beae17ca
+linux-amd64 a95c29544e581b56c1d3f1920637a9f518989b3b744d6b2234fe8de634acddf1
+linux-arm64 c9ac3a6530362fd493a303b2f3e91eb868e717b9eab345dbda2cf1d8ce4aa815
+windows-amd64 78ebf5d11d97298d8dce53090c18ad7d3463d8e52698ce6691d9fdd9b7774f07

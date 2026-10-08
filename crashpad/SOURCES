@@ -1,0 +1,6 @@
+# name commit URL checkout-path (all revisions match Crashpad's DEPS)
+crashpad 677b9e33a269d8ddcf6ad21344e43f6caec4786f https://chromium.googlesource.com/crashpad/crashpad .
+mini_chromium c029983310e7b806aa4c75463d3a013c9558abde https://chromium.googlesource.com/chromium/mini_chromium third_party/mini_chromium/mini_chromium
+googletest 3983f67e32fb3e9294487b9d4f9586efa6e5d088 https://chromium.googlesource.com/external/github.com/google/googletest third_party/googletest/googletest
+lss 9719c1e1e676814c456b55f5f070eabad6709d31 https://chromium.googlesource.com/linux-syscall-support third_party/lss/lss
+zlib fef58692c1d7bec94c4ed3d030a45a1832a9615d https://chromium.googlesource.com/chromium/src/third_party/zlib third_party/zlib/zlib

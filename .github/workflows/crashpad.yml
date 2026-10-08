@@ -1,0 +1,195 @@
+name: crashpad
+
+# Dependency production only. PRs validate packages without publishing;
+# main publishes one immutable release after all four native builds pass.
+on:
+  pull_request:
+    paths:
+      - crashpad/**
+      - zig/TOOLCHAIN
+      - zig/fetch
+      - .github/workflows/crashpad.yml
+  push:
+    branches: [main]
+    paths:
+      - crashpad/**
+      - zig/TOOLCHAIN
+      - zig/fetch
+      - .github/workflows/crashpad.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crashpad-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PUBLISH: ${{ github.event_name != 'pull_request' }}
+  GH_REPO: ${{ github.repository }}
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.pin.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=$(awk '$1 == "crashpad" { print $2 }' crashpad/SOURCES)
+          [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid Crashpad pin"; exit 1; }
+          echo "tag=crashpad-${revision:0:12}-${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+      - name: Create draft release
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.pin.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]] || { echo "Publish only from main."; exit 1; }
+          if draft=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null); then
+            [[ "$draft" == true ]] || { echo "$TAG is already published."; exit 1; }
+          else
+            gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "$TAG" --notes "Build in progress."
+          fi
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-macos
+            runner: macos-26
+            zig: aarch64-macos
+          - target: x86_64-linux-gnu
+            runner: ubuntu-24.04
+            zig: x86_64-linux
+          - target: aarch64-linux-gnu
+            runner: ubuntu-24.04-arm
+            zig: aarch64-linux
+          # A single MSVC DLL/import library serves both Zig Windows ABIs.
+          - target: x86_64-windows
+            runner: windows-2025
+            zig: x86_64-windows
+    name: build (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    env:
+      TAG: ${{ needs.prepare.outputs.tag }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Keep LF endings (Windows)
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: r
+          persist-credentials: false
+      - name: Install tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build cmake zlib1g-dev
+      - name: Install Ninja (macOS)
+        if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: command -v ninja || brew install ninja
+      - name: Enter MSVC environment (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
+            -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" > nul && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') { "$($Matches[1])=$($Matches[2])" >> $env:GITHUB_ENV }
+          }
+      - name: Install Zig
+        run: |
+          set -euo pipefail
+          r/zig/fetch ${{ matrix.zig }} z
+          if [[ "${{ runner.os }}" == Windows ]]; then
+            unzip -q z/*.zip -d z && mv z/zig-*/ zig
+          else
+            mkdir zig && tar -xJf z/*.tar.xz -C zig --strip-components 1
+          fi
+          echo "ZIG=$PWD/zig/zig" >> "$GITHUB_ENV"
+      - name: Compile recipe and check formatting
+        run: |
+          set -euo pipefail
+          "$ZIG" fmt --check r/crashpad/*.zig
+          "$ZIG" build-exe r/crashpad/recipe.zig -O ReleaseSafe -femit-bin=recipe.exe
+      - name: Fetch sources and verified GN
+        run: |
+          set -euo pipefail
+          ./recipe.exe fetch s
+          ./recipe.exe tools t
+      - name: Build
+        run: ./recipe.exe build ${{ matrix.target }} s b t
+      - name: Package
+        run: |
+          mkdir o
+          ./recipe.exe package ${{ matrix.target }} s b o '${{ github.sha }}'
+      - name: Smoke packaged C ABI from Zig
+        run: ./recipe.exe smoke ${{ matrix.target }} o/crashpad-*-${{ matrix.target }} smoke
+      - name: Attest
+        if: env.PUBLISH == 'true'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: o/*.tar.gz
+      - name: Upload to draft release
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" o/*.tar.gz o/*.tar.gz.sha256 --clobber
+
+  publish:
+    needs: [prepare, build]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Publish verified packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --pattern '*.sha256' --dir sums
+          {
+            echo "Crashpad packages with a C ABI bridge, built by recipe [$GITHUB_SHA](https://github.com/$GH_REPO/tree/$GITHUB_SHA)."
+            echo
+            echo "[Source and tool pins](https://github.com/$GH_REPO/tree/$GITHUB_SHA/crashpad) are recorded in each archive's BUILDINFO.txt."
+            echo
+            echo "| Archive | Bytes | SHA-256 |"
+            echo "| --- | --- | --- |"
+            gh release view "$TAG" --json assets \
+              --jq '.assets[] | select(.name | endswith(".tar.gz")) | "\(.name) \(.size)"' |
+              sort | while read -r name size; do
+                echo "| \`$name\` | $size | \`$(cut -d' ' -f1 "sums/$name.sha256")\` |"
+              done
+            echo
+            echo "Verify provenance with \`gh attestation verify <archive> --repo $GH_REPO\`."
+          } > notes.md
+          gh release edit "$TAG" --draft=false --notes-file notes.md
