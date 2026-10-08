@@ -57,6 +57,68 @@ pinned by hash. Windows GNU is cross-compiled on Linux, so it runs neither. The
 ngtcp2 release lacks `reset_stream_at`, which Safari's WebTransport needs
 ([ngtcp2#1097](https://github.com/ngtcp2/ngtcp2/pull/1097)).
 
+## Crashpad
+
+`crashpad/SOURCES` pins Crashpad and the dependencies its GN graph uses;
+`crashpad/GN` pins and checksums its GN binaries. The Zig recipe in
+`crashpad/recipe.zig` fetches, builds, packages and tests four native targets.
+It preserves upstream GN/Ninja and upstream Python build actions. First-party
+orchestration uses the compiler pinned in `zig/TOOLCHAIN`.
+
+Linux x86_64/aarch64 uses the pinned Zig's libc++ and glibc 2.28, with the same
+CPU baselines as Dawn. macOS uses AppleClang, system libc++, Apple M1 and macOS
+26. Windows uses native MSVC, AVX2 and the static CRT. Each archive records its
+actual compiler, Ninja and GN versions, sources, target and flags in `BUILDINFO.txt`.
+Linux runtime dependencies are also recorded and checked for unexpected dynamic
+C++/curl libraries. Rebuild Linux packages whenever the Zig pin changes.
+Linux embeds the pinned zlib source, keeping host headers and libraries out of
+Zig's glibc 2.28 build; macOS uses system zlib and Windows also embeds zlib.
+
+Packages expose only `include/lizzie_crashpad.h`: a small C ABI for registration,
+bounded annotations, prepared attachment paths, on-demand capture and releasing
+the metadata owner. Native packages contain a complete `liblizzie_crashpad.a`;
+Windows contains `lizzie_crashpad.dll` and its import library, serving both Zig
+MSVC and GNU builds. All packages include the handler, database utility,
+annotation inspector and compiled dependency notices. The public header owns
+lifetime constraints; the DLL stays loaded through process exit. This is a
+concrete boundary for Lizzie, not a general Crashpad C++ SDK.
+
+Collection is local: the bridge supplies no upload URL, disables database
+uploads, and disables periodic tasks and handler restart. Linux uses upstream's
+socket HTTP backend without TLS to avoid a curl dependency; adding secure uploads
+requires a deliberate recipe change. The application owns diagnostic files and
+report retention. Symbols, Wasmtime and application recording policy are outside
+this package; the game integration must validate guest-trap coexistence separately.
+
+The `crashpad` workflow runs package smoke tests through Zig on each native
+runner: on-demand capture, Zig panic and worker-thread fault, checking dump
+streams, copied evidence, annotations and disabled uploads. Windows runs those
+tests using both Zig ABIs against the same DLL. These are dependency-production
+checks, separate from game CI. PRs publish nothing; main publishes checksummed,
+attested archives only after every target passes.
+
+For local development, set `ZIG` to the pinned compiler and put Ninja, CMake,
+Python 3, Git and curl on PATH. Windows
+needs Visual Studio C++ tools and a Windows SDK. Use fresh output and smoke
+directories:
+
+```sh
+"$ZIG" build-exe crashpad/recipe.zig -O ReleaseSafe -femit-bin=recipe
+./recipe fetch s
+./recipe tools t
+./recipe build aarch64-macos s b t
+./recipe package aarch64-macos s b o "$(git rev-parse HEAD)"
+./recipe smoke aarch64-macos o/crashpad-*-aarch64-macos smoke
+```
+
+The Windows build forwards GN's extra compiler flags into the pinned
+mini_chromium x64 MSVC invocation, which otherwise ignores them. This narrowly
+checked recipe patch ensures `/MT` and `/arch:AVX2` reach every translation unit;
+remove it when upstream forwards those args itself.
+Linux also narrowly patches upstream's zlib selection to use its existing
+embedded build and applies that build's existing warning settings on Linux;
+remove those patches when GN supports this configuration directly.
+
 ## CI image
 
 `ci-image/` defines a Linux image with Weston 13, lavapipe, Node, and Playwright's

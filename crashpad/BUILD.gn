@@ -1,0 +1,26 @@
+import("//build/crashpad_buildconfig.gni")
+
+group("package") {
+  deps = [
+    ":lizzie_crashpad",
+    "//handler:crashpad_handler",
+    "//tools:crashpad_database_util",
+    "//tools:dump_minidump_annotations",
+  ]
+}
+
+# A complete native static library avoids exposing upstream C++ headers and
+# archive link ordering. Windows confines MSVC C++ and CRT state in one DLL.
+if (crashpad_is_win) {
+  loadable_module("lizzie_crashpad") {
+    sources = [ "lizzie_crashpad.cc" ]
+    deps = [ "//client" ]
+    ldflags = [ "/IMPLIB:" + rebase_path("$root_out_dir/lizzie_crashpad.lib") ]
+  }
+} else {
+  static_library("lizzie_crashpad") {
+    sources = [ "lizzie_crashpad.cc" ]
+    deps = [ "//client" ]
+    complete_static_lib = true
+  }
+}

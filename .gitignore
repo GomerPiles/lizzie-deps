@@ -4,3 +4,9 @@
 /s/
 /b/
 /o/
+# Crashpad recipe executable, verified GN and local package smokes.
+/recipe
+/recipe.exe
+/recipe.pdb
+/t/
+/smoke/
