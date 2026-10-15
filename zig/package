@@ -40,7 +40,9 @@ package)
     "$scripts/fetch" "$host" "$work/download"
     tar -xJf "$work/download/${url##*/}" -C "$work"
     test ! -e "$ZIG_GLOBAL_CACHE_DIR"
+    "$install/zig" run "$scripts/build_jobs.zig" -- apply "$install"
     warmup
+    "$install/zig" run "$scripts/verify_jobs.zig" -- "$install" "$scripts/worker-check" "$work"
     helpers > "$work/helpers"
     cat > "$install/CACHE-SEED.txt" <<META
 zig_version: $version
@@ -63,8 +65,10 @@ verify)
     archive=$3
     [[ $(sha256 "$archive") == "$(cut -d' ' -f1 "$archive.sha256")" ]]
     tar -xJf "$archive" -C "$work"
+    "$install/zig" run "$scripts/build_jobs.zig" -- verify "$install"
     helpers > "$work/before"
     warmup
+    "$install/zig" run "$scripts/verify_jobs.zig" -- "$install" "$scripts/worker-check" "$work"
     helpers > "$work/after"
     cmp "$work/before" "$work/after"
     echo 'PASS: compiler helpers reused after relocation on a fresh runner'

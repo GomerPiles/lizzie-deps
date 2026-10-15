@@ -62,9 +62,13 @@ try {
         if ((Get-FileHash $download -Algorithm SHA256).Hash.ToLowerInvariant() -cne $checksum) { throw 'Upstream checksum mismatch' }
         & $tar -xf $download -C $work
         if ($LASTEXITCODE -ne 0) { throw 'Upstream extraction failed' }
+        & (Join-Path $install 'zig.exe') run (Join-Path $PSScriptRoot 'build_jobs.zig') -- apply $install
+        if ($LASTEXITCODE -ne 0) { throw 'Build runner patch failed' }
         $env:ZIG_GLOBAL_CACHE_DIR = Join-Path $install 'global-cache'
         if (Test-Path $env:ZIG_GLOBAL_CACHE_DIR) { throw 'Seed cache must start empty' }
         Invoke-Warmup
+        & (Join-Path $install 'zig.exe') run (Join-Path $PSScriptRoot 'verify_jobs.zig') -- $install (Join-Path $PSScriptRoot 'worker-check') $work
+        if ($LASTEXITCODE -ne 0) { throw 'Worker limit verification failed' }
         $null = Get-Helpers
         $cpu = (Get-CimInstance Win32_Processor | Select-Object -First 1).Name
         $metadata = [ordered]@{
@@ -98,8 +102,12 @@ try {
         & $tar -xf $Archive -C $work
         if ($LASTEXITCODE -ne 0) { throw 'Bundle extraction failed' }
         $env:ZIG_GLOBAL_CACHE_DIR = Join-Path $install 'global-cache'
+        & (Join-Path $install 'zig.exe') run (Join-Path $PSScriptRoot 'build_jobs.zig') -- verify $install
+        if ($LASTEXITCODE -ne 0) { throw 'Build runner patch verification failed' }
         $before = Get-Helpers
         Invoke-Warmup
+        & (Join-Path $install 'zig.exe') run (Join-Path $PSScriptRoot 'verify_jobs.zig') -- $install (Join-Path $PSScriptRoot 'worker-check') $work
+        if ($LASTEXITCODE -ne 0) { throw 'Worker limit verification failed' }
         $after = Get-Helpers
         if (@(Compare-Object $before $after).Count -ne 0) { throw 'Compiler helpers were rebuilt instead of reused' }
         Write-Output 'PASS: both compiler helpers reused after relocation on a fresh runner'

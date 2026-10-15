@@ -17,6 +17,14 @@ Set `ZIG_GLOBAL_CACHE_DIR` to its `global-cache` directory to use the seed.
 Other CPUs may miss the cache and compile normally. Derived bundles have their
 own checksums and attestations; upstream signatures cover only upstream archives.
 
+Derived bundles also apply `zig/build_jobs.zig` to the shipped build runner. Compile
+and translate-c actions forward `-j2` by default; `LIZZIE_COMPILER_JOBS` selects another
+positive worker count. This controls compiler resources, not target-program threading.
+The compiler executable is unchanged. Bundle checks exercise default and overridden
+limits, reject zero, and require that a test still has `builtin.single_threaded == false`.
+Source anchors fail closed when upstream changes. Remove this patch when the upstream
+build API exposes a compiler-worker limit and Lizzie uses it directly.
+
 ## Dawn
 
 `dawn/REVISION` pins the source; `dawn/*.cmake` defines build and packaging settings.
