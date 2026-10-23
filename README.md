@@ -67,7 +67,7 @@ ngtcp2 release lacks `reset_stream_at`, which Safari's WebTransport needs
 
 ## CI image
 
-`ci-image/` defines a Linux image with Weston 13, lavapipe, Node, and Playwright's
+`ci-image/` defines a Linux image with Git, Weston 13, lavapipe, Node, and Playwright's
 headless Chromium on a pinned Ubuntu 24.04 snapshot. The `ci-image` workflow
 publishes it for amd64 and arm64 as `ghcr.io/gomerpiles/lizzie-ci:<commit>` with a
 provenance attestation. Pin its digest. Existing tags are never replaced.
