@@ -25,6 +25,18 @@ limits, reject zero, and require that a test still has `builtin.single_threaded 
 Source anchors fail closed when upstream changes. Remove this patch when the upstream
 build API exposes a compiler-worker limit and Lizzie uses it directly.
 
+`zig/install_guard.zig` also adds an owned `InstallGuard` to the shipped build
+runner. On Linux, installation copies and process creation share its mutex, so
+fork children cannot inherit a writable installation descriptor. Closing only
+the installer's descriptor is insufficient; even an exec error-pipe handshake
+can precede the kernel's final close of inherited descriptors. The gate ends
+before child execution is awaited, preserving concurrent compilation and tests;
+only synchronous capture helpers such as fmt/pkg-config hold it until completion.
+Remove this patch when upstream prevents the installation/fork race. Source
+anchors fail closed on upstream changes. Linux packaging reproduces unguarded
+`FileBusy`, then checks installation exclusion, concurrent child runtimes and
+genuine error propagation with the shipped guard, including after relocation.
+
 ## Dawn
 
 `dawn/REVISION` pins the source; `dawn/*.cmake` defines build and packaging settings.
