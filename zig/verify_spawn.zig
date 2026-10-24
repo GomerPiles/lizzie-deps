@@ -52,11 +52,10 @@ pub fn main(init: std.process.Init) !void {
     writer_open = false;
     std.log.info("child {d} retains writer fd {d} after parent close: {s}", .{ child_pid, writer.handle, target });
 
-    // Release the competing child after giving this thread time to attempt exec.
-    // The unguarded attempt must fail while the inherited writer is still alive.
-    const resumer = try std.Thread.spawn(.{}, resumeChild, .{ io, child_pid });
+    // Keep the competing child stopped until the unguarded attempt returns.
+    // This reproduces the error without relying on a scheduling delay.
     const launched = std.process.spawn(io, .{ .argv = &.{ target, "--exit" } });
-    resumer.join();
+    try std.posix.kill(child_pid, .CONT);
     thread.join();
     joined = true;
     var waiting = try first.child;
@@ -175,11 +174,6 @@ const Launch = struct {
         self.child = if (self.guard) |guard| guard.spawn(self.io, options) else std.process.spawn(self.io, options);
     }
 };
-
-fn resumeChild(io: Io, pid: std.posix.pid_t) void {
-    Io.sleep(io, .fromMilliseconds(100), .awake) catch {};
-    std.posix.kill(pid, .CONT) catch {};
-}
 
 fn stoppedChild(io: Io, allocator: std.mem.Allocator, launch: *Launch, known_pid: *?std.posix.pid_t) !std.posix.pid_t {
     const deadline = Io.Timestamp.now(io, .awake).addDuration(.fromSeconds(5));
