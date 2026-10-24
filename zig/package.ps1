@@ -64,6 +64,8 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Upstream extraction failed' }
         & (Join-Path $install 'zig.exe') run (Join-Path $PSScriptRoot 'build_jobs.zig') -- apply $install
         if ($LASTEXITCODE -ne 0) { throw 'Build runner patch failed' }
+        & (Join-Path $install 'zig.exe') run (Join-Path $PSScriptRoot 'install_guard.zig') -- apply $install
+        if ($LASTEXITCODE -ne 0) { throw 'Install guard patch failed' }
         $env:ZIG_GLOBAL_CACHE_DIR = Join-Path $install 'global-cache'
         if (Test-Path $env:ZIG_GLOBAL_CACHE_DIR) { throw 'Seed cache must start empty' }
         Invoke-Warmup
@@ -104,6 +106,8 @@ try {
         $env:ZIG_GLOBAL_CACHE_DIR = Join-Path $install 'global-cache'
         & (Join-Path $install 'zig.exe') run (Join-Path $PSScriptRoot 'build_jobs.zig') -- verify $install
         if ($LASTEXITCODE -ne 0) { throw 'Build runner patch verification failed' }
+        & (Join-Path $install 'zig.exe') run (Join-Path $PSScriptRoot 'install_guard.zig') -- verify $install
+        if ($LASTEXITCODE -ne 0) { throw 'Install guard patch verification failed' }
         $before = Get-Helpers
         Invoke-Warmup
         & (Join-Path $install 'zig.exe') run (Join-Path $PSScriptRoot 'verify_jobs.zig') -- $install (Join-Path $PSScriptRoot 'worker-check') $work

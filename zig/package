@@ -40,7 +40,12 @@ package)
     "$scripts/fetch" "$host" "$work/download"
     tar -xJf "$work/download/${url##*/}" -C "$work"
     test ! -e "$ZIG_GLOBAL_CACHE_DIR"
+    if [[ "$host" == *-linux ]]; then
+        "$install/zig" run --dep install_guard -Mroot="$scripts/verify_spawn.zig" -Minstall_guard="$scripts/InstallGuard.zig" -- busy "$work"
+    fi
     "$install/zig" run "$scripts/build_jobs.zig" -- apply "$install"
+    "$install/zig" run "$scripts/install_guard.zig" -- apply "$install"
+    "$install/zig" run --dep install_guard -Mroot="$scripts/verify_spawn.zig" -Minstall_guard="$install/lib/compiler/Maker/InstallGuard.zig" -- fixed "$work"
     warmup
     "$install/zig" run "$scripts/verify_jobs.zig" -- "$install" "$scripts/worker-check" "$work"
     helpers > "$work/helpers"
@@ -66,6 +71,8 @@ verify)
     [[ $(sha256 "$archive") == "$(cut -d' ' -f1 "$archive.sha256")" ]]
     tar -xJf "$archive" -C "$work"
     "$install/zig" run "$scripts/build_jobs.zig" -- verify "$install"
+    "$install/zig" run "$scripts/install_guard.zig" -- verify "$install"
+    "$install/zig" run --dep install_guard -Mroot="$scripts/verify_spawn.zig" -Minstall_guard="$install/lib/compiler/Maker/InstallGuard.zig" -- fixed "$work"
     helpers > "$work/before"
     warmup
     "$install/zig" run "$scripts/verify_jobs.zig" -- "$install" "$scripts/worker-check" "$work"
