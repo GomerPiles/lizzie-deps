@@ -59,12 +59,14 @@ file(STRINGS "${build}/CMakeCache.txt" settings
     REGEX "^(BUILD_SHARED_LIBS:|HB_(BUILD|HAVE)_|CMAKE_(BUILD_TYPE|CXX_COMPILER_TARGET|CXX_FLAGS(_RELEASE)?|MSVC_RUNTIME_LIBRARY|OSX_ARCHITECTURES|OSX_DEPLOYMENT_TARGET):)")
 string(JOIN "\n" compiler ${compiler})
 string(JOIN "\n" settings ${settings})
-file(WRITE "${stage}/BUILDINFO.txt"
+string(CONCAT buildinfo
     "target: ${TARGET}\n"
     "harfbuzz: ${tag} ${url} ${commit}\n"
     "recipe: https://github.com/GomerPiles/lizzie-deps/tree/${RECIPE_COMMIT}\n"
     "link: ${cache_LIZZIE_LINK_LIBRARIES}\n"
     "\n${compiler}\n${settings}\n")
+# Git Bash tools and release-note generation read this metadata on every OS.
+file(CONFIGURE OUTPUT "${stage}/BUILDINFO.txt" CONTENT "${buildinfo}" @ONLY NEWLINE_STYLE UNIX)
 
 set(archive "${OUTPUT_DIR}/${name}.tar.gz")
 execute_process(
@@ -74,5 +76,5 @@ execute_process(
     COMMAND_ERROR_IS_FATAL ANY)
 file(SHA256 "${archive}" digest)
 file(SIZE "${archive}" size)
-file(WRITE "${archive}.sha256" "${digest}  ${name}.tar.gz\n")
+file(CONFIGURE OUTPUT "${archive}.sha256" CONTENT "${digest}  ${name}.tar.gz\n" @ONLY NEWLINE_STYLE UNIX)
 message(STATUS "${name}.tar.gz ${size} bytes sha256 ${digest}")
