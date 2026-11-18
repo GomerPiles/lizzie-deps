@@ -2,5 +2,5 @@
 # still names its commit. A TAG of - pins an untagged commit; the archive then
 # names it by its first 12 hex digits.
 # NAME TAG COMMIT REPOSITORY
-ngtcp2 v1.25.0 f9e9ff01ad2c8116bc09de4f644b0028a61486a6 https://github.com/ngtcp2/ngtcp2.git
-boringssl 0.20260929.0 427ec40cc8edc545253289232e885708c409e5ea https://boringssl.googlesource.com/boringssl
+ngtcp2 v1.26.0 6a22a4d7a111f6b52391910e40ad3681a09cfb9c https://github.com/ngtcp2/ngtcp2.git
+boringssl 0.20261105.0 3dc4b63808921e914a3fb1fa61869abc3938781b https://boringssl.googlesource.com/boringssl
