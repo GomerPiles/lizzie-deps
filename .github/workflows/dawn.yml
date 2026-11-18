@@ -9,12 +9,14 @@ on:
     paths:
       - dawn/**
       - zig/TOOLCHAIN
+      - zig/fetch
       - .github/workflows/dawn.yml
   push:
     branches: [main]
     paths:
       - dawn/**
       - zig/TOOLCHAIN
+      - zig/fetch
       - .github/workflows/dawn.yml
   workflow_dispatch:
 
@@ -116,7 +118,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           set -euo pipefail
-          r/zig/fetch "$(uname -m)-linux" z
+          r/zig/fetch "$(uname -m)-linux" z --upstream-fallback
           mkdir zig && tar -xJf z/*.tar.xz -C zig --strip-components 1
           echo "ZIG=$PWD/zig/zig" >> "$GITHUB_ENV"
 

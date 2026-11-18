@@ -1,0 +1,1 @@
+enum { answer = 42 };

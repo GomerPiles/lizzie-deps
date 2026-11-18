@@ -5,10 +5,11 @@ Releases with SHA-256 checksums. Built packages include provenance attestations.
 
 ## Zig
 
-`zig/TOOLCHAIN` pins the upstream compiler archives. `zig/fetch` downloads and
-verifies them from the unmodified mirror maintained by the `zig` workflow.
-Bundle creation, Linux Dawn builds and ngtcp2 builds use that mirror without
-upstream fallback.
+`zig/TOOLCHAIN` pins the upstream compiler archives. The `zig` workflow verifies
+their SHA-256 checksums and upstream signatures on pull requests and publishes
+the unmodified mirror from `main`. Bundle, Linux Dawn, and ngtcp2 CI builds try
+that mirror first and can fetch the same checksum-pinned bytes upstream while a
+new release is being mirrored. Local package commands use the mirror by default.
 
 The `zig-bundles` workflow adds a compiler-helper cache for Linux x86_64/aarch64,
 macOS aarch64, and Windows x86_64. Only the tiny public fixtures under `zig/`
@@ -16,6 +17,14 @@ are used. Each bundle is checked on a fresh matching runner before publication.
 Set `ZIG_GLOBAL_CACHE_DIR` to its `global-cache` directory to use the seed.
 Other CPUs may miss the cache and compile normally. Derived bundles have their
 own checksums and attestations; upstream signatures cover only upstream archives.
+
+Derived bundles also apply `zig/build_jobs.zig` to the shipped build runner. Compile
+and translate-c actions forward `-j2` by default; `LIZZIE_COMPILER_JOBS` selects another
+positive worker count. This controls compiler resources, not target-program threading.
+The compiler executable is unchanged. Bundle checks exercise default and overridden
+limits, reject zero, and require that a test still has `builtin.single_threaded == false`.
+Source anchors fail closed when upstream changes. Remove this patch when the upstream
+build API exposes a compiler-worker limit and Lizzie uses it directly.
 
 ## Dawn
 
@@ -121,7 +130,7 @@ remove those patches when GN supports this configuration directly.
 
 ## CI image
 
-`ci-image/` defines a Linux image with Weston 13, lavapipe, Node, and Playwright's
+`ci-image/` defines a Linux image with Git, Weston 13, lavapipe, Node, and Playwright's
 headless Chromium on a pinned Ubuntu 24.04 snapshot. The `ci-image` workflow
 publishes it for amd64 and arm64 as `ghcr.io/gomerpiles/lizzie-ci:<commit>` with a
 provenance attestation. Pin its digest. Existing tags are never replaced.
