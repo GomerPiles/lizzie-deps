@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Bootstrap a compiler bundle and verify its helper cache after relocation.
-# Usage: zig/package package|verify HOST [ARCHIVE]
+# Usage: zig/package package HOST [UPSTREAM_ARCHIVE]
+#        zig/package verify HOST BUNDLE
 set -euo pipefail
 mode=$1 host=$2
 scripts=$(cd "$(dirname "$0")" && pwd)
@@ -37,8 +38,13 @@ helpers() {
 }
 case "$mode" in
 package)
-    "$scripts/fetch" "$host" "$work/download"
-    tar -xJf "$work/download/${url##*/}" -C "$work"
+    archive=${3:-}
+    if [[ -z "$archive" ]]; then
+        "$scripts/fetch" "$host" "$work/download"
+        archive="$work/download/${url##*/}"
+    fi
+    [[ $(sha256 "$archive") == "$upstream_sha" ]] || { echo "Upstream checksum mismatch" >&2; exit 1; }
+    tar -xJf "$archive" -C "$work"
     test ! -e "$ZIG_GLOBAL_CACHE_DIR"
     "$install/zig" run "$scripts/build_jobs.zig" -- apply "$install"
     warmup
