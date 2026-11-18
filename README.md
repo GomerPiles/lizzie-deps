@@ -5,10 +5,11 @@ Releases with SHA-256 checksums. Built packages include provenance attestations.
 
 ## Zig
 
-`zig/TOOLCHAIN` pins the upstream compiler archives. `zig/fetch` downloads and
-verifies them from the unmodified mirror maintained by the `zig` workflow.
-Bundle creation, Linux Dawn builds and ngtcp2 builds use that mirror without
-upstream fallback.
+`zig/TOOLCHAIN` pins the upstream compiler archives. The `zig` workflow verifies
+their SHA-256 checksums and upstream signatures on pull requests and publishes
+the unmodified mirror from `main`. Bundle, Linux Dawn, and ngtcp2 CI builds try
+that mirror first and can fetch the same checksum-pinned bytes upstream while a
+new release is being mirrored. Local package commands use the mirror by default.
 
 The `zig-bundles` workflow adds a compiler-helper cache for Linux x86_64/aarch64,
 macOS aarch64, and Windows x86_64. Only the tiny public fixtures under `zig/`

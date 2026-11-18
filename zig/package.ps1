@@ -56,9 +56,12 @@ function Get-Helpers {
 
 try {
     if ($Mode -eq 'package') {
-        $download = Join-Path $work 'upstream.zip'
-        & curl.exe --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --retry 2 --output $download $url
-        if ($LASTEXITCODE -ne 0) { throw 'Download failed' }
+        $download = $Archive
+        if (-not $download) {
+            $download = Join-Path $work 'upstream.zip'
+            & curl.exe --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --retry 2 --output $download $url
+            if ($LASTEXITCODE -ne 0) { throw 'Download failed' }
+        }
         if ((Get-FileHash $download -Algorithm SHA256).Hash.ToLowerInvariant() -cne $checksum) { throw 'Upstream checksum mismatch' }
         & $tar -xf $download -C $work
         if ($LASTEXITCODE -ne 0) { throw 'Upstream extraction failed' }
