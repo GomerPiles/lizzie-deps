@@ -260,7 +260,7 @@ const Recipe = struct {
         if (target.linux()) try self.copy(try self.path(&.{ source, "third_party/lss/lss/LICENSE" }), try self.path(&.{ stage, "notices/lss.LICENSE" }));
         if (target.windows() or target.linux()) try self.copy(try self.path(&.{ source, "third_party/zlib/zlib/LICENSE" }), try self.path(&.{ stage, "notices/zlib.LICENSE" }));
         if (target.windows()) try self.copy(try self.path(&.{ source, "third_party/getopt/LICENSE" }), try self.path(&.{ stage, "notices/getopt.LICENSE" }));
-        if (target == .@"aarch64-macos") try self.copy(try self.path(&.{ source, "third_party/xnu/APPLE_LICENSE" }), try self.path(&.{ stage, "notices/xnu.LICENSE" }));
+        if (target == .@"aarch64-macos") try self.copy(try self.path(&.{ source, "third_party/xnu/xnu/APPLE_LICENSE" }), try self.path(&.{ stage, "notices/xnu.LICENSE" }));
         try self.write(try self.path(&.{ stage, "BUILDINFO.txt" }), try self.format(
             "target: {s}\ncompiler-target: {s}\nrecipe: {s}\ncpu: {s}\nlink: {s}\nbridge: C ABI; max 16 attachments, 64 annotations\nuploads: disabled by bridge\nLinux compiler shim: pinned Zig cc/c++/ar, explicit target and CPU, -g0\nLinux HTTP: socket, no TLS (uploads out of scope)\n\n{s}\n{s}\nGN args:\n{s}\nCompiler:\n{s}\nTools:\n{s}\n",
             .{ @tagName(target), target.triple(), commit, target.cpu(), if (target.windows()) "import library; deploy bin/lizzie_crashpad.dll" else if (target.linux()) "c++ dl pthread rt; embedded pinned zlib" else "c++.1 bsm z; Foundation CoreFoundation Security", @embedFile("SOURCES"), @embedFile("GN"), try self.read(try self.path(&.{ out, "args.gn" })), try self.read(try self.path(&.{ out, "COMPILER.txt" })), try self.read(try self.path(&.{ out, "TOOLS.txt" })) },
