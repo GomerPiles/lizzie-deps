@@ -3,8 +3,8 @@
 #
 # Downloads the Zig archive pinned for HOST in zig/TOOLCHAIN, and upstream's
 # .minisig beside it, into DIR, and checks the archive's SHA-256. Tries the
-# pinned mirror only. The mirror-production workflow opts into upstream
-# fallback so it can publish a new version before that mirror exists.
+# pinned mirror by default. CI opts into upstream fallback while a new
+# version is being mirrored.
 set -euo pipefail
 
 host=$1 dir=$2
@@ -20,31 +20,32 @@ sha256() {
   if command -v sha256sum > /dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1
 }
 
-get() { curl -fsSL --retry 2 --connect-timeout 10 --max-time 900 -o "$2" "$1"; }
+get() { curl -fsSL --proto '=https' --proto-redir '=https' --retry 2 --connect-timeout 10 --max-time 900 -o "$2" "$1"; }
 
-sources=("${url%/*}/$name")
-if [[ "$fallback" == --upstream-fallback ]]; then
-  if mirrors=$(curl -fsSL --retry 2 --max-time 30 https://ziglang.org/download/community-mirrors.txt); then
-    while read -r mirror; do
-      sources+=("$mirror/$name?source=lizzie-deps")
-    done < <(awk 'BEGIN { srand() } NF { print rand() "\t" $0 }' <<< "$mirrors" | sort -n | cut -f 2-)
-  fi
-  sources+=("https://ziglang.org/download/$version/$name")
-fi
-
-mkdir -p "$dir"
-for source in "${sources[@]}"; do
-  signature=${source/"$name"/"$name.minisig"}
+try_source() {
+  local source=$1 signature=${1/"$name"/"$name.minisig"}
   if get "$source" "$dir/$name" && get "$signature" "$dir/$name.minisig"; then
     if [[ "$(sha256 "$dir/$name")" == "$sha" ]]; then
       echo "zig/fetch: $name from ${source%%\?*}"
-      exit 0
+      return 0
     fi
     echo "zig/fetch: SHA-256 mismatch from $source" >&2
   else
     echo "zig/fetch: failed $source" >&2
   fi
   rm -f "$dir/$name" "$dir/$name.minisig"
-done
+  return 1
+}
+
+mkdir -p "$dir"
+if try_source "$url"; then exit 0; fi
+if [[ "$fallback" == --upstream-fallback ]]; then
+  if mirrors=$(curl -fsSL --retry 2 --max-time 30 https://ziglang.org/download/community-mirrors.txt); then
+    while read -r mirror; do
+      if try_source "$mirror/$name?source=lizzie-deps"; then exit 0; fi
+    done < <(awk 'BEGIN { srand() } NF { print rand() "\t" $0 }' <<< "$mirrors" | sort -n | cut -f 2-)
+  fi
+  if try_source "https://ziglang.org/download/$version/$name"; then exit 0; fi
+fi
 echo "zig/fetch: no source had $name with SHA-256 $sha" >&2
 exit 1

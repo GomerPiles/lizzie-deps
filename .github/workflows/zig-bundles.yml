@@ -33,12 +33,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Fetch pinned Zig
+        shell: bash
+        run: ./zig/fetch '${{ matrix.host }}' z --upstream-fallback
       - if: runner.os == 'Windows'
         shell: powershell
-        run: ./zig/package.ps1 -Mode package
+        run: ./zig/package.ps1 -Mode package -Archive (Get-ChildItem z/*.zip).FullName
       - if: runner.os != 'Windows'
         shell: bash
-        run: ./zig/package package '${{ matrix.host }}'
+        run: ./zig/package package '${{ matrix.host }}' z/*.tar.xz
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: zig-ci-${{ matrix.host }}
