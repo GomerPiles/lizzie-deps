@@ -123,7 +123,7 @@ jobs:
       - name: Install Zig
         run: |
           set -euo pipefail
-          r/zig/fetch ${{ matrix.zig }} z
+          r/zig/fetch ${{ matrix.zig }} z --upstream-fallback
           if [[ "${{ runner.os }}" == Windows ]]; then
             unzip -q z/*.zip -d z && mv z/zig-*/ zig
             echo "ZIG=$(cygpath -w "$PWD/zig/zig.exe")" >> "$GITHUB_ENV"
