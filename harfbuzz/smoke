@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Usage: harfbuzz/smoke TARGET PACKAGE_DIR OUTPUT [--link-only]
+# Run beside s/harfbuzz. The font is a test fixture from the pinned checkout.
+set -euo pipefail
+
+target=$1 package=$2 output=$3 mode=${4:-}
+[[ -z "$mode" || "$mode" == --link-only ]] || { echo "Unknown option: $mode" >&2; exit 1; }
+[[ "$output" == */* ]] || output=./$output
+library=$package/lib/libharfbuzz.a
+case "$target" in
+  aarch64-macos) flags=(-mcpu=apple_m1) ;;
+  x86_64-linux-gnu) flags=(-target x86_64-linux-gnu.2.28 -mcpu=x86_64_v3) ;;
+  aarch64-linux-gnu) flags=(-target aarch64-linux-gnu.2.28 -mcpu=generic+v8_2a) ;;
+  x86_64-windows|x86_64-windows-gnu)
+    abi=msvc
+    [[ "$target" != *-gnu ]] || abi=gnu
+    flags=(-target "x86_64-windows-$abi" -mcpu=x86_64_v3)
+    library=$package/lib/harfbuzz.lib
+    cp "$package/bin/harfbuzz.dll" "$(dirname "$output")"
+    ;;
+  *) echo "harfbuzz/smoke: unknown target $target" >&2; exit 1 ;;
+esac
+flags+=("$library")
+libraries=$(sed -n 's/^link: //p' "$package/BUILDINFO.txt")
+if [[ -n "$libraries" ]]; then
+  read -r -a link <<< "$libraries"
+  for lib in "${link[@]}"; do
+    flags+=("-l$lib")
+  done
+fi
+
+"${ZIG:-zig}" cc -O2 -std=c11 -Wall -Wextra -Werror -I "$package/include" \
+  -o "$output" "$(dirname "$0")/smoke.c" "${flags[@]}"
+if [[ "$mode" != --link-only ]]; then
+  "$output" s/harfbuzz/test/shape/data/in-house/fonts/1c2fb74c1b2aa173262734c1f616148f1648cfd6.ttf
+fi

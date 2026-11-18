@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Usage: harfbuzz/build TARGET
+# Run beside s/harfbuzz, as populated by harfbuzz/fetch. Builds into b/harfbuzz.
+set -euo pipefail
+
+recipe=$(cd "$(dirname "$0")" && pwd)
+cmake -S s/harfbuzz -B b/harfbuzz -G Ninja \
+  -D "LIZZIE_TARGET=$1" -C "$recipe/settings.cmake"
+cmake --build b/harfbuzz --target harfbuzz

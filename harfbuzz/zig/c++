@@ -1,0 +1,3 @@
+#!/bin/sh
+# CMake takes one executable per tool; forward to the pinned Zig on PATH or in $ZIG.
+exec "${ZIG:-zig}" c++ "$@"

@@ -65,6 +65,27 @@ pinned by hash. Windows GNU is cross-compiled on Linux, so it runs neither. The
 ngtcp2 release lacks `reset_stream_at`, which Safari's WebTransport needs
 ([ngtcp2#1097](https://github.com/ngtcp2/ngtcp2/pull/1097)).
 
+## HarfBuzz
+
+`harfbuzz/SOURCES` pins the upstream release tag and commit. The `HarfBuzz`
+workflow builds the core library for Linux x86_64/aarch64, macOS aarch64,
+and Windows x86_64. It uses HarfBuzz's built-in Unicode data and excludes
+optional integrations, subsetting, and the standalone raster, vector, and GPU
+libraries. Archives include matching public headers, notices, and link settings
+in `BUILDINFO.txt`. The Unicode data license is from
+[`unicode.org/license.txt`](https://www.unicode.org/license.txt).
+
+Linux uses the pinned Zig and glibc 2.28 baseline. macOS uses AppleClang and
+requires macOS 26+. These targets ship `libharfbuzz.a`. Windows ships
+`harfbuzz.dll` beside the executable and links `harfbuzz.lib` at build time.
+The DLL embeds the static MSVC runtime and serves both MSVC and GNU consumers.
+Minimum CPUs match Dawn's.
+
+Each PR links and runs a Bengali OpenType shaping smoke test from the packaged
+headers and library with the pinned Zig. Windows exercises both ABIs with the
+same DLL. A recipe change on `main` publishes checksummed, attested archives
+after all target builds and smoke tests pass.
+
 ## CI image
 
 `ci-image/` defines a Linux image with Git, Weston 13, lavapipe, Node, and Playwright's

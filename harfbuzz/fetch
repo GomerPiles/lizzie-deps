@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Usage: harfbuzz/fetch DIR
+# Fetch the release tag and check it names the pinned commit.
+set -euo pipefail
+
+read -r name tag commit url < <(grep -Ev '^(#|$)' "$(dirname "$0")/SOURCES")
+[[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { echo "harfbuzz/fetch: expected a full commit hash" >&2; exit 1; }
+source=$1/$name
+mkdir -p "$1"
+mkdir "$source"
+git init -q "$source"
+git -C "$source" fetch -q --depth 1 "$url" "refs/tags/$tag"
+tagged=$(git -C "$source" rev-parse 'FETCH_HEAD^{commit}')
+[[ "$tagged" == "$commit" ]] || { echo "harfbuzz/fetch: $tag is $tagged, expected $commit" >&2; exit 1; }
+git -C "$source" checkout -q "$commit"
+echo "harfbuzz/fetch: $name $tag $commit"
