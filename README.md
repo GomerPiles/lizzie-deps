@@ -1,6 +1,6 @@
 # Prebuilt dependencies
 
-This repository builds and publishes pinned native dependencies, Zig toolchains,
+This repository builds and publishes pinned dependencies, Zig toolchains,
 and a Linux CI image.
 
 ## Use the artifacts
@@ -9,6 +9,10 @@ Choose the archive for your target and ABI from [GitHub Releases](https://github
 Pin its exact URL and hash. Library archives include matching headers and
 licenses. Their `BUILDINFO.txt` records the sources, recipe, and build settings,
 plus link requirements where applicable.
+
+The HarfBuzz `wasm32-freestanding` archive links without libc. Supply font data
+as a memory blob and use the undefined-symbol list in `BUILDINFO.txt` to
+determine which runtime functions your module needs.
 
 Check the archive against the release's SHA-256 checksum. This command verifies
 provenance for artifacts built here.

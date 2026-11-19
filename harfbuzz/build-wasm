@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# shellcheck source-path=SCRIPTDIR
+# Called by harfbuzz/build. Pass -O3 directly to compare with the default -Oz.
+set -euo pipefail
+export LC_ALL=C
+
+opt=${1:--Oz}
+case "$opt" in
+  -Oz|-O3) ;;
+  *) echo "harfbuzz/build-wasm: unknown optimization $opt" >&2; exit 1 ;;
+esac
+source "$(dirname "$0")/wasm-headers.sh"
+build=b/harfbuzz/wasm32-freestanding
+mkdir -p "$build"
+tmp=$(mktemp -d "$build/.build.XXXXXX")
+trap 'rm -rf "$tmp"' EXIT
+
+flags=(
+  -target wasm32-freestanding -std=c++17 -ffreestanding "$opt" -g0
+  -fno-exceptions -fno-rtti -fno-stack-protector -fno-sanitize=all
+  -ffunction-sections -fdata-sections -DNDEBUG
+  -DHB_NO_MT -DHB_NO_OPEN -DHB_NO_GETENV -DHB_DEBUG=0
+  -DHB_NO_BUFFER_MESSAGE -DHB_NO_BUFFER_VERIFY
+  -D__wasi__ -D_LIBCPP_HAS_MUSL_LIBC=1
+  -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE
+  -D_LIBCPP_ASSERTION_SEMANTIC_DEFAULT=_LIBCPP_ASSERTION_SEMANTIC_IGNORE
+)
+# These include paths supply declarations only. Archive the single object
+# without linking either the C or C++ runtime.
+"$zig" c++ "${flags[@]}" \
+  -I "$zig_lib/libcxx/include" \
+  "${wasm_c_headers[@]}" \
+  -c s/harfbuzz/src/harfbuzz.cc -o "$tmp/harfbuzz.o"
+"$zig" ar rcsD "$tmp/libharfbuzz.a" "$tmp/harfbuzz.o"
+
+{
+  printf 'compiler: Zig %s (zig c++)\n' "$("$zig" version)"
+  printf 'flags: %s\n' "${flags[*]}"
+  printf 'header flags: %s\n' '-I <zig-lib>/libcxx/include -isystem <zig-lib>/libc/include/wasm-wasi-musl -isystem <zig-lib>/libc/include/generic-musl'
+  printf '\nUndefined archive symbols (including symbols supplied by the wasm linker and Zig compiler-rt)\n'
+  # The archive has one object. Reading it directly avoids a member-name line.
+  "${LLVM_NM:-llvm-nm}" --undefined-only --just-symbol-name "$tmp/harfbuzz.o" | sort -u
+} > "$tmp/buildinfo.txt"
+mv "$tmp/libharfbuzz.a" "$tmp/buildinfo.txt" "$build/"

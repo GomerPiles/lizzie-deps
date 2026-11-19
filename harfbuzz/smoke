@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck source-path=SCRIPTDIR
 # Usage: harfbuzz/smoke TARGET PACKAGE_DIR OUTPUT [--link-only]
 # Run beside s/harfbuzz. The font is a test fixture from the pinned checkout.
 set -euo pipefail
@@ -8,6 +9,33 @@ target=$1 package=$2 output=$3 mode=${4:-}
 [[ "$output" == */* ]] || output=./$output
 library=$package/lib/libharfbuzz.a
 case "$target" in
+  wasm32-freestanding)
+    recipe=$(cd "$(dirname "$0")" && pwd)
+    source "$recipe/wasm-headers.sh"
+    "$zig" build-exe -target wasm32-freestanding -O ReleaseSmall \
+      -fno-entry -fllvm -flld -fstrip --gc-sections --export=shape_bengali \
+      --export-memory --export=malloc --export=free -I "$package/include" \
+      -cflags -std=c11 -ffreestanding -Wall -Wextra -Werror "${wasm_c_headers[@]}" -- "$recipe/smoke-wasm.c" \
+      "$recipe/smoke-wasm.zig" "$library" -femit-bin="$output"
+    if [[ "$mode" != --link-only ]]; then
+      node - "$output" s/harfbuzz/test/shape/data/in-house/fonts/1c2fb74c1b2aa173262734c1f616148f1648cfd6.ttf <<'JS'
+const assert = require("node:assert/strict");
+const { readFileSync } = require("node:fs");
+const module = new WebAssembly.Module(readFileSync(process.argv[2]));
+assert.deepEqual(WebAssembly.Module.imports(module), []);
+const { shape_bengali, memory, malloc, free } = new WebAssembly.Instance(module).exports;
+const font = readFileSync(process.argv[3]);
+const address = malloc(font.length);
+assert.notEqual(address, 0, "Could not allocate font blob");
+new Uint8Array(memory.buffer, address, font.length).set(font);
+const shaped = shape_bengali(address, font.length);
+free(address);
+assert.equal(shaped, 1, "Unexpected OpenType shaping result for the Bengali conjunct");
+console.log("HarfBuzz wasm smoke passed (zero imports, Bengali ligature shaped)");
+JS
+    fi
+    exit
+    ;;
   aarch64-macos) flags=(-mcpu=apple_m1) ;;
   x86_64-linux-gnu) flags=(-target x86_64-linux-gnu.2.28 -mcpu=x86_64_v3) ;;
   aarch64-linux-gnu) flags=(-target aarch64-linux-gnu.2.28 -mcpu=generic+v8_2a) ;;

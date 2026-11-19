@@ -4,6 +4,9 @@
 set -euo pipefail
 
 recipe=$(cd "$(dirname "$0")" && pwd)
+if [[ "$1" == wasm32-freestanding ]]; then
+  exec "$recipe/build-wasm"
+fi
 cmake -S s/harfbuzz -B b/harfbuzz -G Ninja \
   -D "LIZZIE_TARGET=$1" -C "$recipe/settings.cmake"
 cmake --build b/harfbuzz --target harfbuzz
