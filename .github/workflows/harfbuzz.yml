@@ -79,6 +79,9 @@ jobs:
           - target: x86_64-windows
             runner: windows-2025
             zig: x86_64-windows
+          - target: wasm32-freestanding
+            runner: ubuntu-24.04
+            zig: x86_64-linux
     name: build (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
@@ -103,8 +106,12 @@ jobs:
           persist-credentials: false
 
       - name: Install Ninja (Linux)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.target != 'wasm32-freestanding'
         run: command -v ninja || (sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build)
+
+      - name: Install llvm-nm (wasm)
+        if: matrix.target == 'wasm32-freestanding'
+        run: command -v llvm-nm || (sudo apt-get update && sudo apt-get install -y --no-install-recommends llvm)
 
       - name: Install Ninja (macOS)
         if: runner.os == 'macOS'
